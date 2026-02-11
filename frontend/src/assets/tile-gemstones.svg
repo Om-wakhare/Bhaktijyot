@@ -1,0 +1,21 @@
+<svg width="1200" height="800" viewBox="0 0 1200 800" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7ED"/>
+      <stop offset="1" stop-color="#FED7AA"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" rx="48" fill="url(#bg)"/>
+  <g transform="translate(700 410)">
+    <polygon points="0,-240 190,-80 160,150 0,240 -160,150 -190,-80" fill="url(#gem)"/>
+    <polygon points="0,-190 150,-64 126,118 0,190 -126,118 -150,-64" fill="#ffffff" fill-opacity="0.25"/>
+  </g>
+  <g opacity="0.45" stroke="#7C2D12" stroke-width="10" stroke-linecap="round">
+    <path d="M150 560C250 480 350 480 450 560"/>
+    <path d="M220 640C320 560 420 560 520 640"/>
+  </g>
+</svg>

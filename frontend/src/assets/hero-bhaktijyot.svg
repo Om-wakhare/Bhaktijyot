@@ -1,0 +1,47 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C2D12"/>
+      <stop offset="0.5" stop-color="#F97316"/>
+      <stop offset="1" stop-color="#FDBA74"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1150 320) rotate(90) scale(420 520)">
+      <stop stop-color="#FFF7ED" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#FFF7ED" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+
+  <g opacity="0.16">
+    <path d="M0 640C180 520 350 520 540 640C720 760 900 760 1080 640C1260 520 1420 520 1600 640V900H0V640Z" fill="#000"/>
+  </g>
+
+  <g opacity="0.18" stroke="#FFFFFF" stroke-width="2">
+    <circle cx="260" cy="240" r="110"/>
+    <circle cx="260" cy="240" r="170"/>
+    <circle cx="260" cy="240" r="230"/>
+  </g>
+
+  <g transform="translate(1015 320)" opacity="0.92">
+    <polygon points="0,-180 140,-60 120,110 0,180 -120,110 -140,-60" fill="url(#gem)"/>
+    <polygon points="0,-145 112,-48 95,90 0,145 -95,90 -112,-48" fill="#ffffff" fill-opacity="0.18"/>
+    <polygon points="0,-115 88,-38 74,72 0,115 -74,72 -88,-38" fill="#ffffff" fill-opacity="0.12"/>
+  </g>
+
+  <g transform="translate(1280 575)" opacity="0.9" stroke="#ffffff" stroke-opacity="0.6" stroke-width="8" stroke-linecap="round">
+    <path d="M0 80C60 10 120 -10 190 12"/>
+    <path d="M30 118C98 42 170 24 255 50"/>
+  </g>
+
+  <g transform="translate(860 670)" opacity="0.9" fill="#fff" fill-opacity="0.2">
+    <circle cx="0" cy="0" r="64"/>
+    <circle cx="140" cy="-26" r="44"/>
+    <circle cx="260" cy="18" r="34"/>
+  </g>
+</svg>
