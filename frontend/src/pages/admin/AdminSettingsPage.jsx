@@ -12,6 +12,7 @@ export function AdminSettingsPage() {
     announcement_message: '',
     announcement_cta_text: '',
     announcement_cta_link: '/products',
+    whatsapp_number: '918484913170',
   });
 
   const load = async () => {
@@ -25,6 +26,7 @@ export function AdminSettingsPage() {
         announcement_message: res.data.announcement_message ?? '',
         announcement_cta_text: res.data.announcement_cta_text ?? '',
         announcement_cta_link: res.data.announcement_cta_link ?? '/products',
+        whatsapp_number: res.data.whatsapp_number ?? '918484913170',
       });
     } catch {
       setError('Failed to load settings.');
@@ -53,6 +55,7 @@ export function AdminSettingsPage() {
         announcement_message: form.announcement_message,
         announcement_cta_text: form.announcement_cta_text,
         announcement_cta_link: form.announcement_cta_link,
+        whatsapp_number: form.whatsapp_number,
       });
       setSuccess('Saved successfully.');
     } catch {
@@ -64,6 +67,30 @@ export function AdminSettingsPage() {
 
   return (
     <Page title="Settings" description="Manage global website settings.">
+      <Card title="Contact & WhatsApp" subtitle="WhatsApp number used for all order links on the storefront.">
+        {loading ? (
+          <div className="text-sm text-gray-500">Loading settings...</div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="WhatsApp Number" hint="Include country code without + (e.g. 918484913170 for India)">
+              <Input
+                name="whatsapp_number"
+                value={form.whatsapp_number}
+                onChange={handleChange}
+                placeholder="918484913170"
+                maxLength={30}
+              />
+            </Field>
+            <p className="text-xs text-gray-500">
+              This number appears on the "Order on WhatsApp" buttons across the storefront.
+            </p>
+            {error && <div className="text-sm text-red-600">{error}</div>}
+            {success && <div className="text-sm text-green-600">{success}</div>}
+            <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save WhatsApp'}</Button>
+          </form>
+        )}
+      </Card>
+
       <Card title="Announcement Bar" subtitle="Shown at the top of the public website header.">
         {loading ? (
           <div className="text-sm text-gray-500">Loading settings...</div>

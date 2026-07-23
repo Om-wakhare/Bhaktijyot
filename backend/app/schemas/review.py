@@ -29,6 +29,7 @@ class ReviewUpdateByAdmin(BaseModel):
 class ReviewRead(BaseModel):
     id: int
     product_id: int
+    product_name: Optional[str] = None
     reviewer_name: str
     reviewer_phone: Optional[str] = None
     reviewer_email: Optional[str] = None

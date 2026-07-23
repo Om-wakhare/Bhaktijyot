@@ -14,7 +14,9 @@ export function AdminAddProductPage() {
     benefits: '',
     price: '',
     mrp: '',
+    badge: '',
     category_id: '',
+    stock: '-1',
   });
   const [addImageFiles, setAddImageFiles] = useState([]);
   const [addVideoFile, setAddVideoFile] = useState(null);
@@ -49,7 +51,9 @@ export function AdminAddProductPage() {
         benefits: form.benefits || null,
         price: form.price ? Number(form.price) : null,
         mrp: form.mrp ? Number(form.mrp) : null,
+        badge: form.badge || null,
         category_id: form.category_id ? Number(form.category_id) : null,
+        stock: form.stock !== '' ? Number(form.stock) : -1,
       });
 
       const newProductId = created.data?.id;
@@ -90,12 +94,24 @@ export function AdminAddProductPage() {
             <Textarea name="benefits" value={form.benefits} onChange={handleChange} rows={3} />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Product Badge (top-left label on card — e.g. #1 BEST-SELLER, NEW ARRIVAL, HOT)">
+            <Input
+              name="badge"
+              value={form.badge}
+              onChange={handleChange}
+              placeholder="Leave blank for no badge"
+            />
+          </Field>
+
+          <div className="grid gap-4 sm:grid-cols-4">
             <Field label="Price (optional)">
-              <Input name="price" value={form.price} onChange={handleChange} placeholder="₹" />
+              <Input name="price" value={form.price} onChange={handleChange} placeholder="₹" type="number" />
             </Field>
             <Field label="MRP (optional)">
-              <Input name="mrp" value={form.mrp} onChange={handleChange} placeholder="₹" />
+              <Input name="mrp" value={form.mrp} onChange={handleChange} placeholder="₹" type="number" />
+            </Field>
+            <Field label="Stock (-1 = unlimited)">
+              <Input name="stock" value={form.stock} onChange={handleChange} placeholder="-1" type="number" />
             </Field>
             <Field label="Category (optional)">
               <Select name="category_id" value={form.category_id} onChange={handleChange}>

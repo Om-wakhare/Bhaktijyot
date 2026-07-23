@@ -1,0 +1,10 @@
+# System dependencies required by Pillow (certificate image generation)
+# and DejaVu fonts used as the Arial fallback on Linux.
+[phases.setup]
+nixPkgs = [
+  "zlib",
+  "libjpeg",
+  "libpng",
+  "freetype",
+  "dejavu_fonts"
+]

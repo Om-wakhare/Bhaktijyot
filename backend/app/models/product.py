@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -25,6 +25,17 @@ class Product(Base):
     rating_avg: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     rating_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    # stock: -1 = unlimited/not tracked, 0+ = real inventory count
+    stock: Mapped[int] = mapped_column(Integer, default=-1)
+
+    badge: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Published/draft toggle — False hides product from public catalog
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Manual sort order for curated product ordering (lower = appears first)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
     image_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     video_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
@@ -42,5 +53,8 @@ class Product(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
 

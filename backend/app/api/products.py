@@ -1,9 +1,12 @@
+import io
+import re
 from typing import List, Optional
 from pathlib import Path
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import asc, desc, or_
+from PIL import Image as PilImage
+from sqlalchemy import asc, desc, or_, and_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -12,6 +15,8 @@ from app.db.session import get_db
 from app.models.product_image import ProductImage
 from app.models.product import Product
 from app.schemas.product import (
+    GenerateSlugRequest,
+    GenerateSlugResponse,
     ProductCreate,
     ProductImageRead,
     ProductImageReorderRequest,
@@ -22,16 +27,98 @@ from app.schemas.product import (
 
 router = APIRouter(prefix="/products", tags=["products"])
 
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _load_product(product_id: int, db: Session) -> Product:
+    product = (
+        db.query(Product)
+        .options(selectinload(Product.images), selectinload(Product.category))
+        .filter(Product.id == product_id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+
+def _make_slug(name: str) -> str:
+    slug = name.lower().strip()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
+
+
+def _process_and_save_image(
+    content: bytes, upload_dir: Path, product_id: int, sort_order: int
+) -> tuple[str, str]:
+    """
+    Process raw image bytes with Pillow:
+    - Resize to max 1200×1200 (maintain aspect ratio)
+    - Save as WebP quality=85
+    - Also save a 400×400 thumbnail (cover crop)
+    Returns (public_path, public_thumb_path).
+    """
+    img = PilImage.open(io.BytesIO(content))
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGB")
+    elif img.mode == "RGBA":
+        bg = PilImage.new("RGB", img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[3])
+        img = bg
+
+    # Full image — max 1200×1200
+    img_full = img.copy()
+    img_full.thumbnail((1200, 1200), PilImage.LANCZOS)
+    full_name = f"product_{product_id}_{sort_order}.webp"
+    full_path = upload_dir / full_name
+    img_full.save(full_path, "WEBP", quality=85, optimize=True)
+
+    # Thumbnail — 400×400 cover crop
+    thumb_name = f"product_{product_id}_{sort_order}_thumb.webp"
+    thumb_path = upload_dir / thumb_name
+    img_thumb = img.copy()
+    img_thumb.thumbnail((400, 400), PilImage.LANCZOS)
+    img_thumb.save(thumb_path, "WEBP", quality=80, optimize=True)
+
+    public_full = str(
+        PurePosixPath("static") / "uploads" / settings.PRODUCT_SUBDIR / full_name
+    )
+    return public_full
+
+
+# ─────────────────────────────────────────────────────────────
+# Slug generation (admin only)
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/generate-slug", response_model=GenerateSlugResponse)
+def generate_slug(
+    payload: GenerateSlugRequest,
+    _: str = Depends(get_current_admin),
+):
+    return GenerateSlugResponse(slug=_make_slug(payload.name))
+
+
+# ─────────────────────────────────────────────────────────────
+# Public listing endpoints
+# ─────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[ProductRead])
 def list_products(
     category_id: Optional[int] = None,
+    include_inactive: bool = False,
     db: Session = Depends(get_db),
 ):
-    query = db.query(Product).options(selectinload(Product.images))
+    query = db.query(Product).options(
+        selectinload(Product.images), selectinload(Product.category)
+    )
+    if not include_inactive:
+        query = query.filter(Product.is_active.isnot(False))  # NULL treated as active
     if category_id is not None:
         query = query.filter(Product.category_id == category_id)
-    return query.all()
+    return query.order_by(asc(Product.sort_order), desc(Product.created_at)).all()
 
 
 @router.get("/catalog", response_model=ProductListResponse)
@@ -41,25 +128,23 @@ def catalog_products(
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     sort: str = "newest",
+    in_stock: Optional[bool] = None,
+    include_inactive: bool = False,
     page: int = 1,
     limit: int = 24,
     db: Session = Depends(get_db),
 ):
-    """
-    Enhanced listing endpoint (Amazon/Flipkart-style):
-    - pagination
-    - search
-    - filters
-    - sorting
-
-    This endpoint is additive; existing GET /products remains unchanged.
-    """
     if page < 1:
         raise HTTPException(status_code=400, detail="page must be >= 1")
     if limit < 1 or limit > 100:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
 
-    query = db.query(Product).options(selectinload(Product.images))
+    query = db.query(Product).options(
+        selectinload(Product.images), selectinload(Product.category)
+    )
+
+    if not include_inactive:
+        query = query.filter(Product.is_active.isnot(False))  # NULL treated as active
 
     if category_id is not None:
         query = query.filter(Product.category_id == category_id)
@@ -69,6 +154,9 @@ def catalog_products(
 
     if max_price is not None:
         query = query.filter(Product.price <= max_price)
+
+    if in_stock is True:
+        query = query.filter(Product.stock != 0)
 
     if search:
         s = f"%{search.strip()}%"
@@ -85,7 +173,7 @@ def catalog_products(
 
     sort_key = (sort or "newest").lower()
     if sort_key == "newest":
-        query = query.order_by(desc(Product.created_at), desc(Product.id))
+        query = query.order_by(asc(Product.sort_order), desc(Product.created_at), desc(Product.id))
     elif sort_key == "oldest":
         query = query.order_by(asc(Product.created_at), asc(Product.id))
     elif sort_key in {"price_asc", "price_low", "price_low_to_high"}:
@@ -94,6 +182,8 @@ def catalog_products(
         query = query.order_by(desc(Product.price).nullslast(), desc(Product.created_at))
     elif sort_key in {"name_asc", "name"}:
         query = query.order_by(asc(Product.name), desc(Product.created_at))
+    elif sort_key == "rating":
+        query = query.order_by(desc(Product.rating_avg).nullslast(), desc(Product.rating_count))
     else:
         raise HTTPException(status_code=400, detail="invalid sort")
 
@@ -103,18 +193,63 @@ def catalog_products(
     return ProductListResponse(items=items, page=page, limit=limit, total=total)
 
 
-@router.get("/{product_id}", response_model=ProductRead)
-def get_product(product_id: int, db: Session = Depends(get_db)):
+# ─────────────────────────────────────────────────────────────
+# Fetch by slug (public — only active products)
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/slug/{slug}", response_model=ProductRead)
+def get_product_by_slug(slug: str, db: Session = Depends(get_db)):
     product = (
         db.query(Product)
-        .options(selectinload(Product.images))
-        .filter(Product.id == product_id)
+        .options(selectinload(Product.images), selectinload(Product.category))
+        .filter(Product.slug == slug, Product.is_active.isnot(False))
         .first()
     )
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
+
+# ─────────────────────────────────────────────────────────────
+# Fetch by ID (public — allows draft preview by direct ID)
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/{product_id}", response_model=ProductRead)
+def get_product(product_id: int, db: Session = Depends(get_db)):
+    return _load_product(product_id, db)
+
+
+# ─────────────────────────────────────────────────────────────
+# Related products
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/{product_id}/related", response_model=List[ProductRead])
+def get_related_products(
+    product_id: int,
+    limit: int = 4,
+    db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product or not product.category_id:
+        return []
+    related = (
+        db.query(Product)
+        .options(selectinload(Product.images), selectinload(Product.category))
+        .filter(
+            Product.category_id == product.category_id,
+            Product.id != product_id,
+            Product.is_active.isnot(False),
+        )
+        .order_by(asc(Product.sort_order), desc(Product.created_at))
+        .limit(limit)
+        .all()
+    )
+    return related
+
+
+# ─────────────────────────────────────────────────────────────
+# Admin — CRUD
+# ─────────────────────────────────────────────────────────────
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
 def create_product(
@@ -129,151 +264,7 @@ def create_product(
     db.add(product)
     db.commit()
     db.refresh(product)
-    return product
-
-
-@router.get("/{product_id}/images", response_model=List[ProductImageRead])
-def list_product_images(
-    product_id: int,
-    db: Session = Depends(get_db),
-):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return (
-        db.query(ProductImage)
-        .filter(ProductImage.product_id == product_id)
-        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
-        .all()
-    )
-
-
-@router.delete(
-    "/{product_id}/images/{image_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-def delete_product_image(
-    product_id: int,
-    image_id: int,
-    db: Session = Depends(get_db),
-    _: str = Depends(get_current_admin),
-):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    image = (
-        db.query(ProductImage)
-        .filter(ProductImage.id == image_id, ProductImage.product_id == product_id)
-        .first()
-    )
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    filename = Path(image.image_path).name
-    disk_path = settings.UPLOAD_DIR / settings.PRODUCT_SUBDIR / filename
-    try:
-        if disk_path.exists() and disk_path.is_file():
-            disk_path.unlink()
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to delete image file")
-
-    was_primary = product.image_path == image.image_path
-
-    db.delete(image)
-    db.commit()
-
-    remaining = (
-        db.query(ProductImage)
-        .filter(ProductImage.product_id == product_id)
-        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
-        .all()
-    )
-
-    # Compact sort_order
-    for idx, img in enumerate(remaining):
-        img.sort_order = idx
-
-    if not remaining:
-        product.image_path = None
-    elif was_primary:
-        product.image_path = remaining[0].image_path
-
-    db.commit()
-    return None
-
-
-@router.put("/{product_id}/images/reorder", response_model=List[ProductImageRead])
-def reorder_product_images(
-    product_id: int,
-    payload: ProductImageReorderRequest,
-    db: Session = Depends(get_db),
-    _: str = Depends(get_current_admin),
-):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    images = (
-        db.query(ProductImage)
-        .filter(ProductImage.product_id == product_id)
-        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
-        .all()
-    )
-    existing_ids = {img.id for img in images}
-    incoming_ids = payload.image_ids
-
-    if len(incoming_ids) != len(existing_ids) or set(incoming_ids) != existing_ids:
-        raise HTTPException(status_code=400, detail="image_ids must match existing images exactly")
-
-    id_to_img = {img.id: img for img in images}
-    for idx, img_id in enumerate(incoming_ids):
-        id_to_img[img_id].sort_order = idx
-
-    # Keep primary image consistent with first image
-    product.image_path = id_to_img[incoming_ids[0]].image_path if incoming_ids else None
-
-    db.commit()
-    return (
-        db.query(ProductImage)
-        .filter(ProductImage.product_id == product_id)
-        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
-        .all()
-    )
-
-
-@router.put(
-    "/{product_id}/images/set-primary/{image_id}",
-    response_model=ProductRead,
-)
-def set_primary_product_image(
-    product_id: int,
-    image_id: int,
-    db: Session = Depends(get_db),
-    _: str = Depends(get_current_admin),
-):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    image = (
-        db.query(ProductImage)
-        .filter(ProductImage.id == image_id, ProductImage.product_id == product_id)
-        .first()
-    )
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    product.image_path = image.image_path
-    db.commit()
-
-    product = (
-        db.query(Product)
-        .options(selectinload(Product.images))
-        .filter(Product.id == product_id)
-        .first()
-    )
-    return product
+    return _load_product(product.id, db)
 
 
 @router.put("/{product_id}", response_model=ProductRead)
@@ -301,8 +292,7 @@ def update_product(
         setattr(product, field, value)
 
     db.commit()
-    db.refresh(product)
-    return product
+    return _load_product(product_id, db)
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -317,6 +307,23 @@ def delete_product(
     db.delete(product)
     db.commit()
     return None
+
+
+# ─────────────────────────────────────────────────────────────
+# Admin — Image management
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/{product_id}/images", response_model=List[ProductImageRead])
+def list_product_images(product_id: int, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return (
+        db.query(ProductImage)
+        .filter(ProductImage.product_id == product_id)
+        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
+        .all()
+    )
 
 
 @router.post("/{product_id}/media", response_model=ProductRead)
@@ -363,20 +370,27 @@ async def upload_product_media(
         sort_order = (next_sort.sort_order + 1) if next_sort else 0
 
         for fobj in incoming_images:
-            image_ext = (
-                Path(fobj.filename).suffix.lstrip(".") if fobj.filename else "jpg"
-            )
-            image_name = f"product_{product_id}_{sort_order}.{image_ext}"
-            image_path = upload_dir / image_name
-            with image_path.open("wb") as f:
-                f.write(await fobj.read())
+            # Read content into memory for validation + processing
+            content = await fobj.read()
 
-            public_path = str(
-                PurePosixPath("static")
-                / "uploads"
-                / settings.PRODUCT_SUBDIR
-                / image_name
-            )
+            # Validate MIME type
+            ct = (fobj.content_type or "").lower()
+            if ct not in ALLOWED_IMAGE_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{fobj.filename}' is not an allowed image type. Use JPEG, PNG, or WebP.",
+                )
+
+            # Validate file size
+            if len(content) > MAX_IMAGE_BYTES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{fobj.filename}' exceeds the 5 MB limit.",
+                )
+
+            # Process with Pillow and save as WebP
+            public_path = _process_and_save_image(content, upload_dir, product_id, sort_order)
+
             db.add(
                 ProductImage(
                     product_id=product_id,
@@ -402,16 +416,136 @@ async def upload_product_media(
         video_ext = Path(video.filename).suffix.lstrip(".") if video.filename else "mp4"
         video_name = f"product_{product_id}_video.{video_ext}"
         video_path = upload_dir / video_name
+        content = await video.read()
         with video_path.open("wb") as f:
-            f.write(await video.read())
+            f.write(content)
         product.video_path = str(
-            PurePosixPath("static")
-            / "uploads"
-            / settings.PRODUCT_SUBDIR
-            / video_name
+            PurePosixPath("static") / "uploads" / settings.PRODUCT_SUBDIR / video_name
         )
 
     db.commit()
-    db.refresh(product)
-    return product
+    return _load_product(product_id, db)
 
+
+@router.delete(
+    "/{product_id}/images/{image_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_product_image(
+    product_id: int,
+    image_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_current_admin),
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    image = (
+        db.query(ProductImage)
+        .filter(ProductImage.id == image_id, ProductImage.product_id == product_id)
+        .first()
+    )
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Delete main file and thumbnail
+    upload_dir = settings.UPLOAD_DIR / settings.PRODUCT_SUBDIR
+    for filename in [
+        Path(image.image_path).name,
+        Path(image.image_path).stem + "_thumb.webp",
+    ]:
+        disk_path = upload_dir / filename
+        try:
+            if disk_path.exists() and disk_path.is_file():
+                disk_path.unlink()
+        except Exception:
+            pass
+
+    was_primary = product.image_path == image.image_path
+
+    db.delete(image)
+    db.commit()
+
+    remaining = (
+        db.query(ProductImage)
+        .filter(ProductImage.product_id == product_id)
+        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
+        .all()
+    )
+
+    for idx, img in enumerate(remaining):
+        img.sort_order = idx
+
+    if not remaining:
+        product.image_path = None
+    elif was_primary:
+        product.image_path = remaining[0].image_path
+
+    db.commit()
+    return None
+
+
+@router.put("/{product_id}/images/reorder", response_model=List[ProductImageRead])
+def reorder_product_images(
+    product_id: int,
+    payload: ProductImageReorderRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_current_admin),
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    images = (
+        db.query(ProductImage)
+        .filter(ProductImage.product_id == product_id)
+        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
+        .all()
+    )
+    existing_ids = {img.id for img in images}
+    incoming_ids = payload.image_ids
+
+    if len(incoming_ids) != len(existing_ids) or set(incoming_ids) != existing_ids:
+        raise HTTPException(status_code=400, detail="image_ids must match existing images exactly")
+
+    id_to_img = {img.id: img for img in images}
+    for idx, img_id in enumerate(incoming_ids):
+        id_to_img[img_id].sort_order = idx
+
+    product.image_path = id_to_img[incoming_ids[0]].image_path if incoming_ids else None
+
+    db.commit()
+    return (
+        db.query(ProductImage)
+        .filter(ProductImage.product_id == product_id)
+        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
+        .all()
+    )
+
+
+@router.put(
+    "/{product_id}/images/set-primary/{image_id}",
+    response_model=ProductRead,
+)
+def set_primary_product_image(
+    product_id: int,
+    image_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(get_current_admin),
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    image = (
+        db.query(ProductImage)
+        .filter(ProductImage.id == image_id, ProductImage.product_id == product_id)
+        .first()
+    )
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    product.image_path = image.image_path
+    db.commit()
+    return _load_product(product_id, db)

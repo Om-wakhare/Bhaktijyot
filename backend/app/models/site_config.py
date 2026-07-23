@@ -17,3 +17,6 @@ class SiteConfig(Base):
     )
     announcement_cta_text: Mapped[str] = mapped_column(String(50), default="Shop Now")
     announcement_cta_link: Mapped[str] = mapped_column(String(200), default="/products")
+
+    # WhatsApp contact number (with country code, no +/spaces)
+    whatsapp_number: Mapped[str] = mapped_column(String(30), default="918484913170")

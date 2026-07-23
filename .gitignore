@@ -5,6 +5,19 @@ __pycache__/
 venv/
 .env
 
+# Venv files that land at backend root (when venv is created inside backend/)
+backend/Lib/
+backend/Scripts/
+backend/Include/
+backend/pyvenv.cfg
+
+# Personal / temp assets that shouldn't be in the repo
+frontend/src/assets/*.pdf
+
+# Frontend env
+frontend/.env
+frontend/.env.local
+
 # Node
 node_modules/
 dist/

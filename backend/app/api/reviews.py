@@ -151,19 +151,28 @@ def admin_list_reviews(
     if limit < 1 or limit > 100:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
 
-    query = db.query(Review)
+    query = (
+        db.query(Review, Product.name.label("product_name"))
+        .join(Product, Product.id == Review.product_id)
+    )
     if product_id is not None:
         query = query.filter(Review.product_id == product_id)
     if approved is not None:
         query = query.filter(Review.is_approved.is_(approved))
 
     total = query.count()
-    items = (
+    rows = (
         query.order_by(Review.created_at.desc(), Review.id.desc())
         .offset((page - 1) * limit)
         .limit(limit)
         .all()
     )
+
+    items = []
+    for review, pname in rows:
+        d = {c.name: getattr(review, c.name) for c in Review.__table__.columns}
+        d["product_name"] = pname
+        items.append(d)
 
     return ReviewListResponse(items=items, page=page, limit=limit, total=total)
 

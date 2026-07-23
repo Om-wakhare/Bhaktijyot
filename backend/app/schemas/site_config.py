@@ -10,6 +10,7 @@ class SiteConfigRead(BaseModel):
     announcement_message: str
     announcement_cta_text: str
     announcement_cta_link: str
+    whatsapp_number: str = "918484913170"
 
     class Config:
         from_attributes = True
@@ -20,3 +21,4 @@ class SiteConfigUpdate(BaseModel):
     announcement_message: Optional[str] = Field(default=None, max_length=300)
     announcement_cta_text: Optional[str] = Field(default=None, max_length=50)
     announcement_cta_link: Optional[str] = Field(default=None, max_length=200)
+    whatsapp_number: Optional[str] = Field(default=None, max_length=30)
