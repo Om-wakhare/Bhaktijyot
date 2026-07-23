@@ -449,7 +449,7 @@ export function CrystalStorySection() {
           ].map((w, i) => wordsUnlocked > i && (
             <motion.div key={w.word}
               initial={{opacity:0}} animate={{opacity:0.13}}
-              transition={{duration:1.2, ease:'easeOut'}}
+              transition={{duration:1.2, ease:[0,0,0.58,1]}}
               className="absolute font-black select-none"
               style={{ ...w.style, fontSize:'clamp(4rem,8vw,8rem)', lineHeight:1,
                        color:w.color, letterSpacing:'-0.03em', userSelect:'none' }}>
@@ -489,7 +489,7 @@ export function CrystalStorySection() {
                    style={{ width:'27%', padding:'0 3% 0 4%' }}>
                 <motion.div
                   initial={{opacity:0, x:-32}} animate={{opacity:1, x:0}}
-                  transition={{duration:0.5, ease:'easeOut', delay:0.05}}
+                  transition={{duration:0.5, ease:[0,0,0.58,1], delay:0.05}}
                   className="w-full"
                 >
                   {/* Label */}
@@ -524,7 +524,7 @@ export function CrystalStorySection() {
                    style={{ width:'29%', padding:'0 4% 0 1%' }}>
                 <motion.div
                   initial={{opacity:0, x:32}} animate={{opacity:1, x:0}}
-                  transition={{duration:0.5, ease:'easeOut', delay:0.05}}
+                  transition={{duration:0.5, ease:[0,0,0.58,1], delay:0.05}}
                   className="w-full rounded-3xl overflow-hidden relative"
                   style={{
                     background:`linear-gradient(145deg, rgba(22,12,4,0.94) 0%, rgba(28,18,9,0.88) 60%, rgba(28,18,9,0.92) 100%)`,
@@ -681,7 +681,7 @@ export function CrystalStorySection() {
               {/* ── LAYER 4: Bottom editorial CTA ───────────────────── */}
               <motion.div
                 initial={{opacity:0, y:20}} animate={{opacity:1, y:0}}
-                transition={{delay:0.7, duration:0.7, ease:'easeOut'}}
+                transition={{delay:0.7, duration:0.7, ease:[0,0,0.58,1]}}
                 className="absolute bottom-10 left-0 right-0 flex flex-col items-center gap-3 pointer-events-auto">
 
                 <p className="font-display font-bold uppercase"
@@ -693,7 +693,7 @@ export function CrystalStorySection() {
                   <div className="h-px w-16" style={{ background:'rgba(201,168,76,0.28)' }} />
                   <motion.div
                     animate={{ scale:[1,1.6,1], opacity:[0.55,1,0.55] }}
-                    transition={{ repeat:Infinity, duration:2.0, ease:'easeInOut' }}
+                    transition={{ repeat:Infinity, duration:2.0, ease:[0.42,0,0.58,1] }}
                     className="h-1.5 w-1.5 rounded-full"
                     style={{ background:'#C9A84C', boxShadow:'0 0 10px #C9A84C' }}
                   />
@@ -749,7 +749,7 @@ export function CrystalStorySection() {
                   style={{color:'rgba(244,228,209,.30)'}}>Scroll to Discover</span>
             <div className="w-5 h-8 rounded-full flex items-start justify-center pt-1.5"
                  style={{border:'1.5px solid rgba(201,168,76,.35)'}}>
-              <motion.div animate={{y:[0,12,0]}} transition={{repeat:Infinity,duration:1.4,ease:'easeInOut'}}
+              <motion.div animate={{y:[0,12,0]}} transition={{repeat:Infinity,duration:1.4,ease:[0.42,0,0.58,1]}}
                 className="w-1 h-2 rounded-full" style={{background:'#C9A84C'}} />
             </div>
           </motion.div>

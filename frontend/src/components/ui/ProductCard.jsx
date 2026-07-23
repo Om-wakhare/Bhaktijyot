@@ -59,7 +59,7 @@ const cardVariants = {
   hidden: { opacity: 0, y: 18 },
   visible: (i) => ({
     opacity: 1, y: 0,
-    transition: { duration: 0.44, ease: 'easeOut', delay: i * 0.07 },
+    transition: { duration: 0.44, ease: [0, 0, 0.58, 1], delay: i * 0.07 },
   }),
 };
 
