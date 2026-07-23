@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Environment, Sparkles } from '@react-three/drei';
+import { Environment } from '@react-three/drei';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import ScrollTrigger from 'gsap/ScrollTrigger';
@@ -140,16 +140,13 @@ const easeIO  = t => t < .5 ? 2*t*t : -1+(4-2*t)*t;
 function SceneSetup() {
   const { gl, scene } = useThree();
   useEffect(() => {
-    gl.toneMapping         = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 0.92;
-    scene.environmentIntensity = 0.50;
+    try {
+      gl.toneMapping         = THREE.ACESFilmicToneMapping;
+      gl.toneMappingExposure = 0.92;
+      if (scene.environmentIntensity !== undefined) scene.environmentIntensity = 0.50;
+    } catch(e) { /* ignore renderer setup errors */ }
   }, [gl, scene]);
-  return (
-    <>
-      <color attach="background" args={['#F4E4D1']} />
-      <fogExp2 attach="fog" args={['#F4E4D1', 0.022]} />
-    </>
-  );
+  return <color attach="background" args={['#F4E4D1']} />;
 }
 
 /* ── Crystal bead — true circle, material lerp for showcase ──── */
@@ -163,7 +160,7 @@ function CrystalBead({ bIdx, crystal, scatterRef, progressRef, showcaseRef }) {
   const tgtZ    = Math.sin(angle) * BR;
   const geo     = useMemo(() => new THREE.SphereGeometry(BEAD_R, 28, 20), []);
 
-  useFrame((state) => {
+  useFrame((state) => { try {
     if (!meshRef.current) return;
     const p  = progressRef.current;
     const s  = scatterRef.current[bIdx];
@@ -214,7 +211,7 @@ function CrystalBead({ bIdx, crystal, scatterRef, progressRef, showcaseRef }) {
       mat.emissiveIntensity = lerp(mat.emissiveIntensity, tc.ei ?? 0.5, 0.07);
       mat.transmission      = lerp(mat.transmission ?? 0, tc.tx ?? 0.85, 0.05);
     }
-  });
+  } catch(e) { /* ignore frame errors */ } });
 
   return (
     <mesh ref={meshRef} geometry={geo} castShadow>
@@ -252,10 +249,12 @@ function GoldCord({ progressRef }) {
   }, []);
 
   useFrame(() => {
-    if (!meshRef.current) return;
-    const cv = easeIO(clamp((progressRef.current - 0.06) / 0.21, 0, 1));
-    meshRef.current.visible  = cv > 0.55;
-    meshRef.current.material.opacity = easeIO(clamp((cv - 0.55) / 0.25, 0, 1));
+    try {
+      if (!meshRef.current) return;
+      const cv = easeIO(clamp((progressRef.current - 0.06) / 0.21, 0, 1));
+      meshRef.current.visible  = cv > 0.55;
+      meshRef.current.material.opacity = easeIO(clamp((cv - 0.55) / 0.25, 0, 1));
+    } catch(e) { /* ignore */ }
   });
 
   return (
@@ -283,13 +282,13 @@ function BraceletGroup({ progressRef, showcaseRef }) {
     }))
   );
 
-  useFrame((_, delta) => {
+  useFrame((_, delta) => { try {
     if (!groupRef.current) return;
     const p = progressRef.current;
     if (p >= 0.27) autoRot.current += delta * 0.50;
     const rotEase = easeIO(clamp((p - 0.27) / 0.10, 0, 1));
     groupRef.current.rotation.y = autoRot.current * rotEase;
-  });
+  } catch(e) { /* ignore */ } });
 
   return (
     <group ref={groupRef}>
@@ -309,7 +308,7 @@ function BraceletGroup({ progressRef, showcaseRef }) {
 /* ── Camera — moves to different angles per phase ─────────────── */
 function CameraRig({ progressRef }) {
   const lookAt = useRef(new THREE.Vector3(0, 0, 0));
-  useFrame((state) => {
+  useFrame((state) => { try {
     const p  = progressRef.current;
     const ph = getPhase(p);
 
@@ -332,7 +331,7 @@ function CameraRig({ progressRef }) {
 
     state.camera.position.lerp(new THREE.Vector3(...pos), 0.028);
     state.camera.lookAt(lookAt.current);
-  });
+  } catch(e) { /* ignore */ } });
   return null;
 }
 
@@ -361,7 +360,6 @@ function Scene({ progressRef, showcaseRef }) {
       <pointLight position={[1.5, 2, 2.5]}  intensity={6} color="#FFE8C0" distance={6} />
 
       <BraceletGroup progressRef={progressRef} showcaseRef={showcaseRef} />
-      <Sparkles count={55} scale={[5,3,5]} size={1.2} speed={0.18} color="#C9A84C" opacity={0.28} noise={0.8} />
       <CameraRig progressRef={progressRef} />
     </>
   );
@@ -418,7 +416,7 @@ export function CrystalStorySection() {
 
         {/* Canvas */}
         <div className="absolute inset-0">
-          <Canvas shadows dpr={[1,1]} camera={{ position:[0,1.2,5.5], fov:46 }}
+          <Canvas dpr={[1,1]} camera={{ position:[0,1.2,5.5], fov:46 }}
                   gl={{ antialias:true, alpha:false }}>
             <Suspense fallback={null}>
               <Scene progressRef={progressRef} showcaseRef={showcaseRef} />
