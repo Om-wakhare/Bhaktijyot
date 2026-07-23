@@ -54,14 +54,19 @@ def _sync_columns():
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.PROJECT_NAME, redirect_slashes=False)
 
-    @app.get("/health")
+    # Health check registered first — responds even if DB startup fails
+    @app.get("/health", include_in_schema=False)
     def health():
         return {"status": "ok"}
 
     @app.on_event("startup")
     def _startup() -> None:
-        Base.metadata.create_all(bind=engine)
-        _sync_columns()
+        try:
+            Base.metadata.create_all(bind=engine)
+            _sync_columns()
+        except Exception as exc:
+            import logging
+            logging.getLogger("app").error("DB startup error: %s", exc)
 
     # CORS
     app.add_middleware(
