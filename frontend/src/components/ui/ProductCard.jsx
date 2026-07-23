@@ -101,7 +101,7 @@ export function ProductCard({ product, index = 0, onAddToCart }) {
               alt={product.name}
               onLoad={() => setImgLoaded(true)}
               className={`absolute inset-0 w-full h-full bj-img-zoom ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-              style={{ objectFit: 'contain', padding: '10px', transition: 'opacity 0.3s, transform 0.45s ease' }}
+              style={{ objectFit: 'cover', transition: 'opacity 0.3s, transform 0.45s ease' }}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">

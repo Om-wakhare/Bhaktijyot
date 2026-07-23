@@ -51,42 +51,44 @@ def _make_slug(name: str) -> str:
     return slug.strip("-")
 
 
+_PRODUCT_SIZE = 1000  # all product images are stored as 1000×1000 squares
+
+
 def _process_and_save_image(
     content: bytes, upload_dir: Path, product_id: int, sort_order: int
-) -> tuple[str, str]:
+) -> str:
     """
-    Process raw image bytes with Pillow:
-    - Resize to max 1200×1200 (maintain aspect ratio)
+    Normalise an uploaded product image to a 1000×1000 square:
+    - Scale to fit inside 1000×1000 (no crop, aspect ratio preserved)
+    - Centre on a white canvas so all stored images are exactly square
     - Save as WebP quality=85
-    - Also save a 400×400 thumbnail (cover crop)
-    Returns (public_path, public_thumb_path).
     """
     img = PilImage.open(io.BytesIO(content))
-    if img.mode not in ("RGB", "RGBA"):
-        img = img.convert("RGB")
-    elif img.mode == "RGBA":
+
+    # Flatten transparency onto white
+    if img.mode == "RGBA":
         bg = PilImage.new("RGB", img.size, (255, 255, 255))
         bg.paste(img, mask=img.split()[3])
         img = bg
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
 
-    # Full image — max 1200×1200
-    img_full = img.copy()
-    img_full.thumbnail((1200, 1200), PilImage.LANCZOS)
+    # Scale to fit within the target square, preserving aspect ratio
+    img.thumbnail((_PRODUCT_SIZE, _PRODUCT_SIZE), PilImage.LANCZOS)
+
+    # Centre on a white square canvas
+    canvas = PilImage.new("RGB", (_PRODUCT_SIZE, _PRODUCT_SIZE), (255, 255, 255))
+    offset_x = (_PRODUCT_SIZE - img.width) // 2
+    offset_y = (_PRODUCT_SIZE - img.height) // 2
+    canvas.paste(img, (offset_x, offset_y))
+
     full_name = f"product_{product_id}_{sort_order}.webp"
     full_path = upload_dir / full_name
-    img_full.save(full_path, "WEBP", quality=85, optimize=True)
+    canvas.save(full_path, "WEBP", quality=85, optimize=True)
 
-    # Thumbnail — 400×400 cover crop
-    thumb_name = f"product_{product_id}_{sort_order}_thumb.webp"
-    thumb_path = upload_dir / thumb_name
-    img_thumb = img.copy()
-    img_thumb.thumbnail((400, 400), PilImage.LANCZOS)
-    img_thumb.save(thumb_path, "WEBP", quality=80, optimize=True)
-
-    public_full = str(
+    return str(
         PurePosixPath("static") / "uploads" / settings.PRODUCT_SUBDIR / full_name
     )
-    return public_full
 
 
 # ─────────────────────────────────────────────────────────────
