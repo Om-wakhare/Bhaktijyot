@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import api from '../../services/apiClient';
 import { useCart } from '../../services/cart';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { SocialProofBar } from '../../components/layout/SocialProofBar';
 import { HeroSection } from '../../components/home/HeroSection';
 import { ThreeWorldCards } from '../../components/home/ThreeWorldCards';
@@ -11,6 +12,11 @@ import { ConsultExpertSection } from '../../components/home/ConsultExpertSection
 import { WhyBhaktijyot } from '../../components/home/WhyBhaktijyot';
 import { CustomerReviews } from '../../components/home/CustomerReviews';
 import { InstagramReels } from '../../components/home/InstagramReels';
+
+const CrystalStorySection = lazy(() =>
+  import('../../components/home/CrystalStorySection')
+    .then(m => ({ default: m.CrystalStorySection }))
+);
 
 export function HomePage() {
   const [products, setProducts] = useState([]);
@@ -56,6 +62,12 @@ export function HomePage() {
       />
 
       <ThreeWorldCards />
+
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <CrystalStorySection />
+        </Suspense>
+      </ErrorBoundary>
 
       <NewArrivals
         products={products}
