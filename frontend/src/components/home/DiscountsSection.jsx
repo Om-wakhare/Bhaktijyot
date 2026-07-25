@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { ProductCard } from '../ui/ProductCard';
 import { SkeletonCard } from '../ui/SkeletonCard';
+import flower from '../../assets/flower.png';
 
 export function DiscountsSection({ products = [], loading = false, whatsappNumber, onAddToCart }) {
   const discounted = products.filter((p) => p.mrp && p.mrp > p.price);
@@ -37,12 +38,17 @@ export function DiscountsSection({ products = [], loading = false, whatsappNumbe
           fontWeight: 600,
           letterSpacing: '-0.01em',
           lineHeight: 1.15,
-          paddingBottom: '0.55rem',
-          borderBottom: '1.5px solid transparent',
-          borderImage: 'linear-gradient(90deg, transparent, #C9A84C 25%, #C9A84C 75%, transparent) 1',
         }}>
           Discounts &amp; Deals
         </h2>
+
+        {/* Lotus divider — same as Pooja Essentials */}
+        <img
+          src={flower}
+          alt=""
+          className="mx-auto mt-1 w-full max-w-[220px]"
+          style={{ mixBlendMode: 'multiply' }}
+        />
 
         {/* Shop All — right-anchored, hero button style */}
         <Link
