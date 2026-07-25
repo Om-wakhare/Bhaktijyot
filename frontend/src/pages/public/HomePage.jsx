@@ -63,18 +63,18 @@ export function HomePage() {
 
       <ThreeWorldCards />
 
-      <ErrorBoundary fallback={null}>
-        <Suspense fallback={null}>
-          <CrystalStorySection />
-        </Suspense>
-      </ErrorBoundary>
-
       <NewArrivals
         products={products}
         loading={loading}
         whatsappNumber={whatsappNumber}
         onAddToCart={addItem}
       />
+
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <CrystalStorySection />
+        </Suspense>
+      </ErrorBoundary>
 
       <DiscountsSection
         products={products}

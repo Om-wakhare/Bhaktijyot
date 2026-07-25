@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { ProductCard } from '../ui/ProductCard';
 import { SkeletonCard } from '../ui/SkeletonCard';
+import flower from '../../assets/flower.png';
 
 export function NewArrivals({ products = [], loading = false, whatsappNumber, onAddToCart }) {
   const items = loading
@@ -42,6 +43,14 @@ export function NewArrivals({ products = [], loading = false, whatsappNumber, on
         }}>
           New Arrivals
         </h2>
+
+        {/* Lotus divider — same as Pooja Essentials */}
+        <img
+          src={flower}
+          alt=""
+          className="mx-auto mt-1 w-full max-w-[220px]"
+          style={{ mixBlendMode: 'multiply' }}
+        />
 
         {/* View All — right-anchored, hero button style */}
         <Link
