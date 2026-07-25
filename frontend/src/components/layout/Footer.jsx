@@ -64,12 +64,12 @@ const LINKS = {
 
 export function Footer() {
   return (
-    <footer style={{ background: '#120C05' }} className="text-white/60">
+    <footer style={{ backgroundColor: '#F4E4D1' }} className="text-espresso/70 border-t border-espresso/15">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-8 lg:pt-18 lg:pb-10">
 
         {/* ── Follow Us — top center ── */}
         <div className="flex flex-col items-center mb-12 lg:mb-14">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">Follow Us</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-espresso/40 mb-3">Follow Us</p>
           <div className="flex items-center gap-2.5">
             {SOCIALS.map(({ label, href, icon }) => (
               <a
@@ -85,22 +85,22 @@ export function Footer() {
                   width: 34,
                   height: 34,
                   borderRadius: '50%',
-                  border: '1px solid rgba(212,175,55,0.35)',
-                  color: 'rgba(255,255,255,0.55)',
-                  background: 'rgba(212,175,55,0.06)',
+                  border: '1px solid rgba(28,18,9,0.20)',
+                  color: 'rgba(28,18,9,0.60)',
+                  background: 'rgba(28,18,9,0.03)',
                   transition: 'all 0.2s',
                   flexShrink: 0,
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(212,175,55,0.75)';
-                  e.currentTarget.style.color = '#D4AF37';
+                  e.currentTarget.style.border = '1px solid rgba(184,132,10,0.75)';
+                  e.currentTarget.style.color = '#B8840A';
                   e.currentTarget.style.background = 'rgba(212,175,55,0.12)';
-                  e.currentTarget.style.boxShadow = '0 0 10px rgba(212,175,55,0.3)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(212,175,55,0.25)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(212,175,55,0.35)';
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
-                  e.currentTarget.style.background = 'rgba(212,175,55,0.06)';
+                  e.currentTarget.style.border = '1px solid rgba(28,18,9,0.20)';
+                  e.currentTarget.style.color = 'rgba(28,18,9,0.60)';
+                  e.currentTarget.style.background = 'rgba(28,18,9,0.03)';
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
@@ -120,28 +120,28 @@ export function Footer() {
               <img
                 src={logo}
                 alt="Bhaktijyot"
-                className="h-16 w-auto object-contain brightness-0 invert opacity-90"
+                className="h-16 w-auto object-contain"
               />
             </Link>
 
             {/* Tagline */}
-            <p className="text-xs leading-relaxed text-white/50">
+            <p className="text-xs font-medium leading-relaxed text-espresso/60">
               Authentic gemstones, crystal malas, and sacred pooja essentials — curated with devotion since 1985.
             </p>
 
             {/* Contact info */}
-            <div className="space-y-2.5 text-xs text-white/50">
+            <div className="space-y-2.5 text-xs font-medium text-espresso/70">
               <div className="flex items-start gap-2">
-                <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5 text-gold" />
+                <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary" />
                 <span>Mangal Murti Apartment, opp. Sami Ganpati, Delhi Gate, Ahilyanagar, Maharashtra</span>
               </div>
               <div className="flex items-center gap-2">
-                <Phone className="h-3.5 w-3.5 shrink-0 text-gold" />
-                <a href="tel:+918484913170" className="hover:text-gold transition-colors">+91 84849 13170</a>
+                <Phone className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <a href="tel:+918484913170" className="hover:text-primary transition-colors">+91 84849 13170</a>
               </div>
               <div className="flex items-center gap-2">
-                <Mail className="h-3.5 w-3.5 shrink-0 text-gold" />
-                <a href="mailto:info@bhaktijyot.com" className="hover:text-gold transition-colors">info@bhaktijyot.com</a>
+                <Mail className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <a href="mailto:info@bhaktijyot.com" className="hover:text-primary transition-colors">info@bhaktijyot.com</a>
               </div>
             </div>
           </div>
@@ -149,11 +149,11 @@ export function Footer() {
           {/* ── Link columns ── */}
           {Object.entries(LINKS).map(([title, items]) => (
             <div key={title} className="space-y-4">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-white/30">{title}</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-espresso/40">{title}</h3>
               <ul className="space-y-2.5">
                 {items.map(({ to, label }) => (
                   <li key={label}>
-                    <Link to={to} className="text-xs text-white/55 hover:text-gold transition-colors">
+                    <Link to={to} className="text-xs font-medium text-espresso/70 hover:text-primary transition-colors">
                       {label}
                     </Link>
                   </li>
@@ -166,15 +166,15 @@ export function Footer() {
         {/* ── Divider + bottom bar ── */}
         <div
           className="mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3"
-          style={{ borderTop: '1px solid rgba(212,175,55,0.15)' }}
+          style={{ borderTop: '1px solid rgba(28,18,9,0.15)' }}
         >
-          <p className="text-[11px] text-white/30">
+          <p className="text-[11px] font-medium text-espresso/45">
             © {new Date().getFullYear()} Bhaktijyot. All rights reserved.
           </p>
-          <div className="flex items-center gap-4 text-[11px] text-white/20">
-            <Link to="/privacy" className="hover:text-white/40 transition-colors">Privacy Policy</Link>
+          <div className="flex items-center gap-4 text-[11px] font-medium text-espresso/40">
+            <Link to="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
             <span>·</span>
-            <Link to="/terms" className="hover:text-white/40 transition-colors">Terms of Use</Link>
+            <Link to="/terms" className="hover:text-primary transition-colors">Terms of Use</Link>
             <span>·</span>
             <span>Crafted with devotion in Ahmednagar</span>
           </div>
