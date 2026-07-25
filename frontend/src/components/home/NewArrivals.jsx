@@ -37,9 +37,6 @@ export function NewArrivals({ products = [], loading = false, whatsappNumber, on
           fontWeight: 600,
           letterSpacing: '-0.01em',
           lineHeight: 1.15,
-          paddingBottom: '0.55rem',
-          borderBottom: '1.5px solid transparent',
-          borderImage: 'linear-gradient(90deg, transparent, #C9A84C 25%, #C9A84C 75%, transparent) 1',
         }}>
           New Arrivals
         </h2>
