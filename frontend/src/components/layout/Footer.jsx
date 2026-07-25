@@ -67,6 +67,49 @@ export function Footer() {
     <footer style={{ background: '#120C05' }} className="text-white/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-8 lg:pt-18 lg:pb-10">
 
+        {/* ── Follow Us — top center ── */}
+        <div className="flex flex-col items-center mb-12 lg:mb-14">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">Follow Us</p>
+          <div className="flex items-center gap-2.5">
+            {SOCIALS.map(({ label, href, icon }) => (
+              <a
+                key={label}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={label}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 34,
+                  height: 34,
+                  borderRadius: '50%',
+                  border: '1px solid rgba(212,175,55,0.35)',
+                  color: 'rgba(255,255,255,0.55)',
+                  background: 'rgba(212,175,55,0.06)',
+                  transition: 'all 0.2s',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.border = '1px solid rgba(212,175,55,0.75)';
+                  e.currentTarget.style.color = '#D4AF37';
+                  e.currentTarget.style.background = 'rgba(212,175,55,0.12)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(212,175,55,0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.border = '1px solid rgba(212,175,55,0.35)';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
+                  e.currentTarget.style.background = 'rgba(212,175,55,0.06)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                {icon}
+              </a>
+            ))}
+          </div>
+        </div>
+
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-12">
 
           {/* ── Brand column ── */}
@@ -99,49 +142,6 @@ export function Footer() {
               <div className="flex items-center gap-2">
                 <Mail className="h-3.5 w-3.5 shrink-0 text-gold" />
                 <a href="mailto:info@bhaktijyot.com" className="hover:text-gold transition-colors">info@bhaktijyot.com</a>
-              </div>
-            </div>
-
-            {/* Social icons */}
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">Follow Us</p>
-              <div className="flex items-center gap-2.5">
-                {SOCIALS.map(({ label, href, icon }) => (
-                  <a
-                    key={label}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={label}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      border: '1px solid rgba(212,175,55,0.35)',
-                      color: 'rgba(255,255,255,0.55)',
-                      background: 'rgba(212,175,55,0.06)',
-                      transition: 'all 0.2s',
-                      flexShrink: 0,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.border = '1px solid rgba(212,175,55,0.75)';
-                      e.currentTarget.style.color = '#D4AF37';
-                      e.currentTarget.style.background = 'rgba(212,175,55,0.12)';
-                      e.currentTarget.style.boxShadow = '0 0 10px rgba(212,175,55,0.3)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.border = '1px solid rgba(212,175,55,0.35)';
-                      e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
-                      e.currentTarget.style.background = 'rgba(212,175,55,0.06)';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    {icon}
-                  </a>
-                ))}
               </div>
             </div>
           </div>
