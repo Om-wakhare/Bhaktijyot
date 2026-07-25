@@ -64,11 +64,17 @@ const LINKS = {
 
 export function Footer() {
   return (
-    <footer style={{ backgroundColor: '#F4E4D1' }} className="text-espresso/70 border-t border-espresso/15">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-8 lg:pt-18 lg:pb-10">
+    <footer
+      style={{
+        backgroundColor: '#F4E4D1',
+        textShadow: '0 0 12px rgba(212,175,55,0.5), 0 0 28px rgba(212,175,55,0.2)',
+      }}
+      className="text-espresso/70 border-t border-espresso/15"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-5 lg:pt-10 lg:pb-6">
 
         {/* ── Follow Us — top center ── */}
-        <div className="flex flex-col items-center mb-12 lg:mb-14">
+        <div className="flex flex-col items-center mb-6 lg:mb-8">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-espresso/40 mb-3">Follow Us</p>
           <div className="flex items-center gap-2.5">
             {SOCIALS.map(({ label, href, icon }) => (
@@ -110,17 +116,17 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-12">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
 
           {/* ── Brand column ── */}
-          <div className="space-y-5 lg:col-span-1">
+          <div className="space-y-3 lg:col-span-1">
 
             {/* Logo */}
             <Link to="/" className="inline-block">
               <img
                 src={logo}
                 alt="Bhaktijyot"
-                className="h-16 w-auto object-contain"
+                className="h-24 lg:h-28 w-auto object-contain"
               />
             </Link>
 
@@ -165,7 +171,7 @@ export function Footer() {
 
         {/* ── Divider + bottom bar ── */}
         <div
-          className="mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3"
+          className="mt-8 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3"
           style={{ borderTop: '1px solid rgba(28,18,9,0.15)' }}
         >
           <p className="text-[11px] font-medium text-espresso/45">
