@@ -45,7 +45,9 @@ export function LogoPillsHeader({ cartCount = 0, wishlistCount = 0, onCartOpen, 
       className="border-b border-espresso/15 px-6 lg:px-10"
       style={{
         backgroundColor: '#F4E4D1',
-        textShadow: '0 0 12px rgba(212,175,55,0.5), 0 0 28px rgba(212,175,55,0.2)',
+        WebkitTextStroke: '0.6px rgba(212,175,55,0.9)',
+        paintOrder: 'stroke',
+        textShadow: '0 0 10px rgba(212,175,55,0.35)',
       }}
     >
       <div className="max-w-screen-xl mx-auto grid grid-cols-[auto_1fr_auto] items-center gap-6 h-28">
