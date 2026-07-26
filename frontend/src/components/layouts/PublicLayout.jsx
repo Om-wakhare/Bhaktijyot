@@ -99,7 +99,7 @@ export function PublicLayout() {
       <div className={`sticky top-0 z-50 transition-shadow duration-200 ${scrolled ? 'shadow-md' : ''}`}>
 
         {/* Mobile top bar */}
-        <div className="lg:hidden border-b border-espresso/10 flex items-center h-20 px-4 gap-3" style={{ backgroundColor: '#F4E4D1' }}>
+        <div className="lg:hidden border-b border-espresso/10 flex items-center h-20 px-4 gap-3" style={{ backgroundColor: '#F7E7D5' }}>
           <button
             type="button"
             className="h-9 w-9 flex items-center justify-center text-espresso/70 hover:text-espresso transition-colors"

@@ -105,7 +105,7 @@ function WorldCard({ world, categories, isOpen, onToggle, isActive = false }) {
       {isOpen && worldCats.length > 0 && (
         <div
           className="absolute top-full left-0 right-0 z-50 mt-2 rounded-2xl shadow-xl border border-espresso/10 p-4 space-y-1"
-          style={{ backgroundColor: '#F4E4D1' }}
+          style={{ backgroundColor: '#F7E7D5' }}
         >
           <div className="text-[10px] font-semibold uppercase tracking-wider text-espresso/40 mb-2 px-1">
             Categories
@@ -142,7 +142,7 @@ export function SecondaryNavbar({ categories = [] }) {
   return (
     <div
       className="border-b border-espresso/10 py-4 px-4 sm:px-6 lg:px-10"
-      style={{ backgroundColor: '#F4E4D1' }}
+      style={{ backgroundColor: '#F7E7D5' }}
     >
       <div className="max-w-screen-xl mx-auto">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

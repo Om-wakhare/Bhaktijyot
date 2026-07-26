@@ -66,7 +66,7 @@ export function Footer() {
   return (
     <footer
       style={{
-        backgroundColor: '#F4E4D1',
+        backgroundColor: '#F7E7D5',
         WebkitTextStroke: '0.6px rgba(212,175,55,0.9)',
         paintOrder: 'stroke',
         textShadow: '0 0 10px rgba(212,175,55,0.35)',
