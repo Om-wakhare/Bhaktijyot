@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../services/apiClient';
 
 /* ── Shared typographic tokens (mirrors HeroSection) ── */
@@ -200,6 +201,14 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
   const [loading, setLoading] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  /* ── Expert carousel ── */
+  const [active, setActive] = useState(0);
+  const go = (dir) => setActive((i) => (i + dir + EXPERTS.length) % EXPERTS.length);
+  useEffect(() => {
+    const t = setInterval(() => setActive((i) => (i + 1) % EXPERTS.length), 4500);
+    return () => clearInterval(t);
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -237,15 +246,66 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
           </p>
         </div>
 
-        {/* ── Experts grid ── */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 mb-14 lg:mb-20">
-          {EXPERTS.map((expert) => (
-            <ExpertCard key={expert.name} expert={expert} whatsappNumber={whatsappNumber} />
-          ))}
-        </div>
+        {/* ── Two columns — carousel (left) + form (right) ── */}
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
 
-        {/* ── Booking form — centered card ── */}
-        <div className="max-w-xl mx-auto">
+          {/* ── LEFT — expert carousel ── */}
+          <div className="relative">
+            {/* Sliding track */}
+            <div style={{ overflow: 'hidden', borderRadius: '1.25rem' }}>
+              <div style={{
+                display: 'flex',
+                transform: `translateX(-${active * 100}%)`,
+                transition: 'transform 0.6s cubic-bezier(0.4,0,0.2,1)',
+              }}>
+                {EXPERTS.map((expert) => (
+                  <div key={expert.name} style={{ minWidth: '100%', padding: '4px' }}>
+                    <ExpertCard expert={expert} whatsappNumber={whatsappNumber} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Prev / Next arrows */}
+            <button
+              type="button" aria-label="Previous expert" onClick={() => go(-1)}
+              className="absolute top-1/2 -translate-y-1/2 -left-3 lg:-left-5 flex items-center justify-center transition-all hover:scale-110"
+              style={{
+                width: 40, height: 40, borderRadius: '50%', background: '#FFFFFF',
+                border: GOLD_BORDER, boxShadow: GOLD_GLOW, color: DARK, cursor: 'pointer',
+              }}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button" aria-label="Next expert" onClick={() => go(1)}
+              className="absolute top-1/2 -translate-y-1/2 -right-3 lg:-right-5 flex items-center justify-center transition-all hover:scale-110"
+              style={{
+                width: 40, height: 40, borderRadius: '50%', background: '#FFFFFF',
+                border: GOLD_BORDER, boxShadow: GOLD_GLOW, color: DARK, cursor: 'pointer',
+              }}
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+
+            {/* Dots */}
+            <div className="flex items-center justify-center gap-2 mt-5">
+              {EXPERTS.map((expert, i) => (
+                <button
+                  key={expert.name} type="button" aria-label={`Go to ${expert.name}`}
+                  onClick={() => setActive(i)}
+                  style={{
+                    height: 8, borderRadius: 999, cursor: 'pointer', border: 'none',
+                    width: i === active ? 24 : 8,
+                    background: i === active ? GOLD : 'rgba(212,175,55,0.35)',
+                    transition: 'all 0.3s',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* ── RIGHT — booking form ── */}
           <div style={{
             background: '#FFFFFF',
             border: GOLD_BORDER,
