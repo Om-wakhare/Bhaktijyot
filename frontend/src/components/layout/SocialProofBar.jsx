@@ -12,9 +12,14 @@ export function SocialProofBar() {
   return (
     <div className="border-b border-espresso/10 py-3" style={{ backgroundColor: '#F4E4D1' }}>
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10">
-        <div className="flex items-center justify-between flex-wrap gap-y-2">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 justify-items-center sm:flex sm:justify-between sm:items-center">
           {STATS.map((stat, i) => (
-            <div key={i} className="flex items-center gap-1.5 whitespace-nowrap">
+            <div
+              key={i}
+              className={`flex items-center gap-1.5 whitespace-nowrap ${
+                i === STATS.length - 1 ? 'col-span-2 sm:col-span-1' : ''
+              }`}
+            >
               <Star className="h-3.5 w-3.5 fill-gold text-gold shrink-0" />
               <span className="text-xs font-bold text-espresso">{stat.value}</span>
               <span className="text-xs text-espresso/55">{stat.label}</span>
