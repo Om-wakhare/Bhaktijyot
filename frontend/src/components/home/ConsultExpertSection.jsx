@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../services/apiClient';
 
 /* ── Shared typographic tokens (mirrors HeroSection) ── */
@@ -86,24 +85,17 @@ const TYPES = [
 const EXPERTS = [
   {
     name: 'Pandit Ramesh Shastri',
+    qualification: 'Certified Vedic Gemologist (GIA)',
+    experience: '40+ years of experience',
     speciality: 'Vedic Astrology & Gemstones',
-    experience: '40+ years experience',
     photo: null,
-    tags: ['Kundli Reading', 'Gemstone Match'],
   },
   {
     name: 'Dr. Meera Joshi',
-    speciality: 'Crystal Healing Therapist',
-    experience: 'Certified · 15+ years',
+    qualification: 'Certified Crystal Healing Therapist',
+    experience: '15+ years of experience',
+    speciality: 'Crystal Healing & Chakra Balancing',
     photo: null,
-    tags: ['Crystal Healing', 'Chakra Balancing'],
-  },
-  {
-    name: 'Acharya Vikram Rao',
-    speciality: 'Vastu & Spiritual Guidance',
-    experience: '25+ years experience',
-    photo: null,
-    tags: ['Vastu Shastra', 'Rudraksha'],
   },
 ];
 
@@ -111,87 +103,60 @@ function initials(name) {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
 
-function ExpertCard({ expert, whatsappNumber }) {
-  const consult = () => {
-    const msg = `Hello Bhaktijyot! I'd like to consult with ${expert.name} (${expert.speciality}).`;
-    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
-  };
-
+/* Full-size image card — photo fills the card, details overlaid at the bottom */
+function ExpertCard({ expert }) {
   return (
     <div
-      className="flex flex-col items-center text-center transition-all hover:-translate-y-1.5"
       style={{
-        background: '#FFFFFF',
-        border: GOLD_BORDER,
+        position: 'relative',
+        height: '100%',
+        minHeight: 440,
         borderRadius: '1.25rem',
+        overflow: 'hidden',
+        border: GOLD_BORDER,
         boxShadow: GOLD_GLOW,
-        padding: '2rem 1.5rem 1.75rem',
       }}
     >
-      {/* Photo / initials avatar */}
-      <div
-        style={{
-          width: 104, height: 104, borderRadius: '50%',
-          border: '2px solid rgba(212,175,55,0.75)',
-          boxShadow: '0 0 0 4px rgba(212,175,55,0.12), 0 6px 18px rgba(28,18,9,0.15)',
-          overflow: 'hidden',
+      {/* Full-bleed photo, or gradient placeholder with initials */}
+      {expert.photo ? (
+        <img
+          src={expert.photo}
+          alt={expert.name}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(160deg, #1D3D2C 0%, #2A5A40 100%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'linear-gradient(145deg, #1D3D2C 0%, #2A5A40 100%)',
-          marginBottom: '1.1rem', flexShrink: 0,
-        }}
-      >
-        {expert.photo ? (
-          <img src={expert.photo} alt={expert.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <span style={{ color: GOLD, fontSize: '2rem', fontWeight: 700, fontFamily: 'inherit' }}>
+        }}>
+          <span style={{ color: 'rgba(212,175,55,0.45)', fontSize: '5.5rem', fontWeight: 700, fontFamily: 'inherit' }}>
             {initials(expert.name)}
           </span>
-        )}
+        </div>
+      )}
+
+      {/* Bottom gradient for readability */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(to top, rgba(15,8,2,0.94) 0%, rgba(15,8,2,0.55) 38%, transparent 68%)',
+      }} />
+
+      {/* Details */}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '1.75rem 1.75rem 2rem' }}>
+        <p style={{ color: GOLD, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+          {expert.speciality}
+        </p>
+        <h3 className="font-display" style={{ color: '#FFF5E6', fontSize: 'clamp(1.5rem, 2.4vw, 1.9rem)', fontWeight: 700, lineHeight: 1.15 }}>
+          {expert.name}
+        </h3>
+        <p style={{ color: 'rgba(255,245,230,0.85)', fontSize: '0.86rem', fontWeight: 600, marginTop: '0.45rem' }}>
+          {expert.qualification}
+        </p>
+        <p style={{ color: 'rgba(255,245,230,0.65)', fontSize: '0.78rem', fontWeight: 500, marginTop: '0.2rem' }}>
+          {expert.experience}
+        </p>
       </div>
-
-      {/* Name */}
-      <h3 className="font-display" style={{ color: DARK, fontSize: '1.15rem', fontWeight: 700, lineHeight: 1.2 }}>
-        {expert.name}
-      </h3>
-
-      {/* Speciality */}
-      <p style={{ color: '#8B5E0A', fontSize: '0.82rem', fontWeight: 600, marginTop: '0.3rem' }}>
-        {expert.speciality}
-      </p>
-
-      {/* Experience */}
-      <p style={{ color: 'rgba(28,18,9,0.45)', fontSize: '0.72rem', fontWeight: 500, marginTop: '0.2rem' }}>
-        {expert.experience}
-      </p>
-
-      {/* Tags */}
-      <div className="flex flex-wrap justify-center gap-1.5" style={{ marginTop: '0.9rem' }}>
-        {expert.tags.map((t) => (
-          <span key={t} style={{
-            border: '1px solid rgba(212,175,55,0.5)',
-            background: 'rgba(212,175,55,0.10)',
-            color: '#6B4A0A',
-            fontSize: '0.66rem', fontWeight: 600,
-            padding: '0.25rem 0.6rem', borderRadius: 999,
-          }}>{t}</span>
-        ))}
-      </div>
-
-      {/* Consult button */}
-      <button
-        type="button"
-        onClick={consult}
-        className="transition-all hover:scale-[1.03]"
-        style={{
-          marginTop: '1.35rem', width: '100%', padding: '0.7rem',
-          borderRadius: 8, border: GOLD_BORDER, background: 'transparent',
-          boxShadow: GOLD_GLOW, color: DARK, fontWeight: 800, fontSize: '0.72rem',
-          textTransform: 'uppercase', letterSpacing: '0.14em', cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
-      >
-        Consult on WhatsApp
-      </button>
     </div>
   );
 }
@@ -201,9 +166,8 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
   const [loading, setLoading] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  /* ── Expert carousel ── */
+  /* ── Expert carousel — auto-rotate only ── */
   const [active, setActive] = useState(0);
-  const go = (dir) => setActive((i) => (i + dir + EXPERTS.length) % EXPERTS.length);
   useEffect(() => {
     const t = setInterval(() => setActive((i) => (i + 1) % EXPERTS.length), 4500);
     return () => clearInterval(t);
@@ -246,61 +210,23 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
           </p>
         </div>
 
-        {/* ── Two columns — carousel (left) + form (right) ── */}
-        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+        {/* ── Two columns — auto-rotating expert carousel (left) + form (right) ── */}
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-stretch">
 
-          {/* ── LEFT — expert carousel ── */}
-          <div className="relative">
-            {/* Sliding track */}
-            <div style={{ overflow: 'hidden', borderRadius: '1.25rem' }}>
-              <div style={{
-                display: 'flex',
-                transform: `translateX(-${active * 100}%)`,
-                transition: 'transform 0.6s cubic-bezier(0.4,0,0.2,1)',
-              }}>
-                {EXPERTS.map((expert) => (
-                  <div key={expert.name} style={{ minWidth: '100%', padding: '4px' }}>
-                    <ExpertCard expert={expert} whatsappNumber={whatsappNumber} />
+          {/* ── LEFT — expert carousel (auto-rotating) ── */}
+          <div style={{ overflow: 'hidden', borderRadius: '1.25rem' }}>
+            <div style={{
+              display: 'flex',
+              height: '100%',
+              transform: `translateX(-${active * 100}%)`,
+              transition: 'transform 0.7s cubic-bezier(0.4,0,0.2,1)',
+            }}>
+              {EXPERTS.map((expert) => (
+                <div key={expert.name} style={{ minWidth: '100%', display: 'flex' }}>
+                  <div style={{ flex: 1 }}>
+                    <ExpertCard expert={expert} />
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Prev / Next arrows */}
-            <button
-              type="button" aria-label="Previous expert" onClick={() => go(-1)}
-              className="absolute top-1/2 -translate-y-1/2 -left-3 lg:-left-5 flex items-center justify-center transition-all hover:scale-110"
-              style={{
-                width: 40, height: 40, borderRadius: '50%', background: '#FFFFFF',
-                border: GOLD_BORDER, boxShadow: GOLD_GLOW, color: DARK, cursor: 'pointer',
-              }}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button" aria-label="Next expert" onClick={() => go(1)}
-              className="absolute top-1/2 -translate-y-1/2 -right-3 lg:-right-5 flex items-center justify-center transition-all hover:scale-110"
-              style={{
-                width: 40, height: 40, borderRadius: '50%', background: '#FFFFFF',
-                border: GOLD_BORDER, boxShadow: GOLD_GLOW, color: DARK, cursor: 'pointer',
-              }}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-
-            {/* Dots */}
-            <div className="flex items-center justify-center gap-2 mt-5">
-              {EXPERTS.map((expert, i) => (
-                <button
-                  key={expert.name} type="button" aria-label={`Go to ${expert.name}`}
-                  onClick={() => setActive(i)}
-                  style={{
-                    height: 8, borderRadius: 999, cursor: 'pointer', border: 'none',
-                    width: i === active ? 24 : 8,
-                    background: i === active ? GOLD : 'rgba(212,175,55,0.35)',
-                    transition: 'all 0.3s',
-                  }}
-                />
+                </div>
               ))}
             </div>
           </div>
