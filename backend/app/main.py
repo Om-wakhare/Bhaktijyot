@@ -68,11 +68,13 @@ def create_app() -> FastAPI:
             import logging
             logging.getLogger("app").error("DB startup error: %s", exc)
 
-    # CORS — allow configured origins plus any Vercel deployment (preview or prod)
+    # CORS — allow only the production frontend (plus any locally configured origins)
+    allowed_origins = list(dict.fromkeys(
+        [*settings.CORS_ORIGINS, "https://bhaktijyot-4ghf.vercel.app"]
+    ))
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_origin_regex=r"https://.*\.vercel\.app",
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
