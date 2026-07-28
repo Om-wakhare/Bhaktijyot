@@ -5,6 +5,7 @@ from pathlib import Path
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from PIL import Image as PilImage
 from sqlalchemy import asc, desc, or_, and_
 from sqlalchemy.orm import Session, selectinload
@@ -12,9 +13,12 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.core.security import get_current_admin
 from app.db.session import get_db
+from app.models.category import Category
 from app.models.product_image import ProductImage
 from app.models.product import Product
 from app.schemas.product import (
+    BulkRowError,
+    BulkUploadResult,
     GenerateSlugRequest,
     GenerateSlugResponse,
     ProductCreate,
@@ -101,6 +105,180 @@ def generate_slug(
     _: str = Depends(get_current_admin),
 ):
     return GenerateSlugResponse(slug=_make_slug(payload.name))
+
+
+# ─────────────────────────────────────────────────────────────
+# Bulk Excel upload
+# ─────────────────────────────────────────────────────────────
+
+# Column headers (case-insensitive) recognised in the Excel file
+_BULK_COLUMNS = [
+    "name", "slug", "description", "benefits",
+    "price", "mrp", "badge", "category", "stock",
+]
+
+
+def _clean_cell(v) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
+def _to_number(v):
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"'{v}' is not a valid number")
+
+
+@router.get("/bulk-template")
+def bulk_template(_: str = Depends(get_current_admin)):
+    """Download a ready-to-fill .xlsx template with headers and one example row."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Products"
+    ws.append(_BULK_COLUMNS)
+    # Example row to guide the admin
+    ws.append([
+        "Natural Amethyst Bracelet", "", "Genuine amethyst crystal bracelet.",
+        "Calms the mind, aids intuition.", 1499, 2499, "Bestseller",
+        "Crystals", -1,
+    ])
+    # Widen columns a little for readability
+    for i, col in enumerate(_BULK_COLUMNS, start=1):
+        ws.column_dimensions[chr(64 + i)].width = max(14, len(col) + 4)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="product_bulk_template.xlsx"'},
+    )
+
+
+@router.post("/bulk-upload", response_model=BulkUploadResult)
+async def bulk_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: str = Depends(get_current_admin),
+):
+    """Create many products at once from an uploaded .xlsx file."""
+    from openpyxl import load_workbook
+
+    name = (file.filename or "").lower()
+    if not name.endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel file")
+
+    content = await file.read()
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read the Excel file")
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status_code=400, detail="The sheet is empty")
+
+    # Map header names → column index (case-insensitive)
+    header = [(_clean_cell(c) or "").lower() for c in rows[0]]
+    col_index = {name: i for i, name in enumerate(header) if name in _BULK_COLUMNS}
+    if "name" not in col_index:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required 'name' column. Download the template for the correct format.",
+        )
+
+    # Category lookup by name or slug (case-insensitive)
+    cat_lookup = {}
+    for cat in db.query(Category).all():
+        cat_lookup[cat.name.strip().lower()] = cat.id
+        if cat.slug:
+            cat_lookup[cat.slug.strip().lower()] = cat.id
+
+    # Existing slugs (DB) + slugs claimed within this batch
+    used_slugs = {s[0] for s in db.query(Product.slug).all()}
+
+    def get(row, key):
+        idx = col_index.get(key)
+        return row[idx] if idx is not None and idx < len(row) else None
+
+    def unique_slug(base: str) -> str:
+        slug = base or "product"
+        candidate = slug
+        n = 2
+        while candidate in used_slugs:
+            candidate = f"{slug}-{n}"
+            n += 1
+        used_slugs.add(candidate)
+        return candidate
+
+    created_names: List[str] = []
+    errors: List[BulkRowError] = []
+    skipped = 0
+
+    for offset, row in enumerate(rows[1:], start=2):  # row 1 is the header
+        # Skip fully blank rows
+        if row is None or all(c is None or str(c).strip() == "" for c in row):
+            continue
+        try:
+            name_val = _clean_cell(get(row, "name"))
+            if not name_val:
+                skipped += 1
+                errors.append(BulkRowError(row=offset, error="Missing product name"))
+                continue
+
+            slug_val = _clean_cell(get(row, "slug"))
+            slug_val = unique_slug(_make_slug(slug_val) if slug_val else _make_slug(name_val))
+
+            # Category (by name or slug) — optional
+            category_id = None
+            cat_val = _clean_cell(get(row, "category"))
+            if cat_val:
+                category_id = cat_lookup.get(cat_val.lower())
+                if category_id is None:
+                    skipped += 1
+                    errors.append(BulkRowError(row=offset, error=f"Unknown category '{cat_val}'"))
+                    continue
+
+            stock_raw = get(row, "stock")
+            stock_val = -1
+            if stock_raw is not None and str(stock_raw).strip() != "":
+                stock_val = int(float(stock_raw))
+
+            product = Product(
+                name=name_val,
+                slug=slug_val,
+                description=_clean_cell(get(row, "description")),
+                benefits=_clean_cell(get(row, "benefits")),
+                price=_to_number(get(row, "price")),
+                mrp=_to_number(get(row, "mrp")),
+                badge=_clean_cell(get(row, "badge")),
+                category_id=category_id,
+                stock=stock_val,
+            )
+            db.add(product)
+            created_names.append(name_val)
+        except Exception as exc:  # noqa: BLE001 — report the row, keep going
+            skipped += 1
+            errors.append(BulkRowError(row=offset, error=str(exc)))
+
+    if created_names:
+        db.commit()
+
+    return BulkUploadResult(
+        created=len(created_names),
+        skipped=skipped,
+        created_products=created_names,
+        errors=errors,
+    )
 
 
 # ─────────────────────────────────────────────────────────────

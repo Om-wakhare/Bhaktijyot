@@ -58,9 +58,56 @@ export function AdminManageProductsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [sort, setSort]               = useState({ col: 'name', dir: 'asc' });
 
+  // Bulk upload
+  const [bulkOpen, setBulkOpen]           = useState(false);
+  const [bulkFile, setBulkFile]           = useState(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult]       = useState(null);
+
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const openBulk = () => { setBulkOpen(true); setBulkFile(null); setBulkResult(null); };
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get('/products/bulk-template', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'product_bulk_template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      showToast('Could not download template', 'error');
+    }
+  };
+
+  const handleBulkUpload = async () => {
+    if (!bulkFile) return;
+    setBulkUploading(true);
+    setBulkResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', bulkFile);
+      const res = await api.post('/products/bulk-upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setBulkResult(res.data);
+      if (res.data.created > 0) {
+        const pRes = await api.get('/products', { params: { include_inactive: true } });
+        setProducts(pRes.data);
+        showToast(`${res.data.created} product${res.data.created !== 1 ? 's' : ''} imported`);
+      }
+    } catch (err) {
+      showToast(err?.response?.data?.detail || 'Upload failed', 'error');
+    } finally {
+      setBulkUploading(false);
+    }
   };
 
   useEffect(() => {
@@ -130,9 +177,12 @@ export function AdminManageProductsPage() {
       title="Products"
       description={`${products.length} total · ${products.filter((p) => p.is_active).length} published`}
       actions={
-        <Link to="/admin/products/add">
-          <Button size="sm">+ Add Product</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={openBulk}>Bulk Upload</Button>
+          <Link to="/admin/products/add">
+            <Button size="sm">+ Add Product</Button>
+          </Link>
+        </div>
       }
     >
       {toast && (
@@ -301,6 +351,81 @@ export function AdminManageProductsPage() {
           </div>
         )}
       </Card>
+
+      {/* ── Bulk Upload Modal ── */}
+      {bulkOpen && (
+        <div
+          onClick={() => !bulkUploading && setBulkOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(15,8,2,0.55)', backdropFilter: 'blur(3px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 16, width: '100%', maxWidth: 520,
+              padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto',
+            }}
+          >
+            <h3 className="text-lg font-bold text-gray-900">Bulk Upload Products</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Upload an Excel (.xlsx) file to create many products at once.
+            </p>
+
+            {/* Step 1 — template */}
+            <div className="mt-5 p-3 rounded-lg" style={{ background: '#F9FAFB', border: '1px solid #F3F4F6' }}>
+              <p className="text-xs font-semibold text-gray-700 mb-1">1. Download the template</p>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Columns: name (required), slug, description, benefits, price, mrp, badge, category, stock.
+                Leave <b>slug</b> blank to auto-generate. <b>category</b> matches an existing category name.
+              </p>
+              <Button size="sm" variant="outline" onClick={downloadTemplate}>Download Excel Template</Button>
+            </div>
+
+            {/* Step 2 — file */}
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-gray-700 mb-2">2. Choose your filled .xlsx file</p>
+              <input
+                type="file"
+                accept=".xlsx,.xlsm"
+                onChange={(e) => { setBulkFile(e.target.files?.[0] || null); setBulkResult(null); }}
+                className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#1D3D2C] file:text-white hover:file:bg-[#152B1E] file:cursor-pointer"
+              />
+            </div>
+
+            {/* Result */}
+            {bulkResult && (
+              <div className="mt-4 rounded-lg p-3 text-sm" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                <p className="font-semibold text-green-800">
+                  ✓ {bulkResult.created} created · {bulkResult.skipped} skipped
+                </p>
+                {bulkResult.errors?.length > 0 && (
+                  <div className="mt-2 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-semibold text-red-700 mb-1">Skipped rows:</p>
+                    <ul className="text-[11px] text-red-600 space-y-0.5">
+                      {bulkResult.errors.map((er, i) => (
+                        <li key={i}>Row {er.row}: {er.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setBulkOpen(false)} disabled={bulkUploading}>
+                {bulkResult ? 'Done' : 'Cancel'}
+              </Button>
+              <Button size="sm" onClick={handleBulkUpload} disabled={!bulkFile || bulkUploading}>
+                {bulkUploading ? 'Uploading…' : 'Upload & Create'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Page>
   );
 }

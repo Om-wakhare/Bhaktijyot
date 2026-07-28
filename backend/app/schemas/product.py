@@ -139,3 +139,15 @@ class GenerateSlugRequest(BaseModel):
 
 class GenerateSlugResponse(BaseModel):
     slug: str
+
+
+class BulkRowError(BaseModel):
+    row: int
+    error: str
+
+
+class BulkUploadResult(BaseModel):
+    created: int
+    skipped: int
+    created_products: List[str] = []
+    errors: List[BulkRowError] = []
