@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ShieldCheck, BadgeCheck, Award, Users } from 'lucide-react';
 import { mediaUrl } from '../../services/media';
-import heroImg from '../../assets/hero-section1.png';
+import heroImg from '../../assets/hero-section1.webp';
 
 const TRUST_BADGES = [
   { icon: BadgeCheck, label: 'Lab Certified' },

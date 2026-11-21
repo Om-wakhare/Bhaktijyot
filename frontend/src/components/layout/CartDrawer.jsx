@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import { useCart } from '../../services/cart';
 import { mediaUrl } from '../../services/media';
 
-import catIdols     from '../../assets/cat-idols.png';
-import catDiya      from '../../assets/cat-diya.png';
-import catRudraksha from '../../assets/cat-rudraksha.png';
-import catPooja     from '../../assets/cat-pooja.png';
+import catIdols     from '../../assets/cat-idols.webp';
+import catDiya      from '../../assets/cat-diya.webp';
+import catRudraksha from '../../assets/cat-rudraksha.webp';
+import catPooja     from '../../assets/cat-pooja.webp';
 
 const FREE_SHIPPING = 1500;
 

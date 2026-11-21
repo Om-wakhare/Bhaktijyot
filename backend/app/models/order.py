@@ -6,6 +6,7 @@ from typing import Optional, List
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.validators import utcnow
 from app.db.session import Base
 
 
@@ -28,8 +29,11 @@ class Order(Base):
     razorpay_payment_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     razorpay_signature: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    status: Mapped[str] = mapped_column(String(30), default="pending")
-    # pending → paid → processing → shipped → delivered → cancelled
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    # pending → paid → processing → shipped → delivered
+    # cancelled  — cancelled by admin (reserved stock released)
+    # abandoned  — payment never completed (window closed / reservation expired; stock released)
+    # failed     — legacy value from older code; treated like pending (stock still held)
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -40,10 +44,10 @@ class Order(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=utcnow
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True, onupdate=datetime.utcnow
+        DateTime(timezone=True), nullable=True, onupdate=utcnow
     )
 
 

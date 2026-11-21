@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
+// Self-hosted copy of drei's "studio" preset — avoids a runtime fetch from raw.githack.com
+import studioHdr from '../../assets/hdri/studio_small_03_1k.hdr';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import ScrollTrigger from 'gsap/ScrollTrigger';
@@ -341,7 +343,7 @@ function Scene({ progressRef, showcaseRef }) {
     <>
       <SceneSetup />
       <Suspense fallback={null}>
-        <Environment preset="studio" background={false} />
+        <Environment files={studioHdr} background={false} />
       </Suspense>
 
       {/* Cinematic lighting — 6 lights (down from 11) */}

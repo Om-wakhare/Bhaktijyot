@@ -15,6 +15,10 @@ class Category(Base):
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
+    # Storefront "world" this category belongs to: pooja | crystals | gemstones.
+    # Subcategories without a value inherit it from their parent.
+    world: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
+
     parent_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("categories.id"), nullable=True
     )

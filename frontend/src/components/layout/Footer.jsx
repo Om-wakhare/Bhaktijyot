@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import logo from '../../assets/final-logo.png';
+import logo from '../../assets/final-logo.webp';
 
 /* ── Social links — swap # for real URLs when ready ── */
 const SOCIALS = [

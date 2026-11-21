@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 
-import img1 from '../../assets/secondarynavimg1.png';
-import img2 from '../../assets/secondarynavimg2.png';
-import img3 from '../../assets/secondarynavimg3.png';
+import img1 from '../../assets/secondarynavimg1.webp';
+import img2 from '../../assets/secondarynavimg2.webp';
+import img3 from '../../assets/secondarynavimg3.webp';
 
 const WORLDS = [
   {

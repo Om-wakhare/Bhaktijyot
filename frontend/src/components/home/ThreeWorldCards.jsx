@@ -1,10 +1,10 @@
 import { Link, useSearchParams } from 'react-router-dom';
 
-import catIdols     from '../../assets/cat-idols.png';
-import catDiya      from '../../assets/cat-diya.png';
-import catRudraksha from '../../assets/cat-rudraksha.png';
-import catPooja     from '../../assets/cat-pooja.png';
-import flower       from '../../assets/flower.png';
+import catIdols     from '../../assets/cat-idols.webp';
+import catDiya      from '../../assets/cat-diya.webp';
+import catRudraksha from '../../assets/cat-rudraksha.webp';
+import catPooja     from '../../assets/cat-pooja.webp';
+import flower       from '../../assets/flower.webp';
 
 const CATEGORIES = [
   { key: 'idol',      label: 'Idols',            to: '/products?q=idol',      image: catIdols },

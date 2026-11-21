@@ -483,6 +483,13 @@ export function ProductDetailPage() {
 
   useEffect(() => () => clearTimeout(addedTimer.current), []);
 
+  // NOTE: every hook must run before the early returns below — calling a hook
+  // only after loading finishes changes the hook count and crashes React (#310).
+  const productName = product?.name || '';
+  const waMessage = useMemo(() => encodeURIComponent(
+    `Namaste! I'm interested in this product from Bhaktijyot:\n\n*${productName}*\n\n${window.location.href}`,
+  ), [productName]);
+
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid gap-8 md:grid-cols-2 animate-pulse">
@@ -510,9 +517,6 @@ export function ProductDetailPage() {
     );
   }
 
-  const waMessage = useMemo(() => encodeURIComponent(
-    `Namaste! I'm interested in this product from Bhaktijyot:\n\n*${product.name}*\n\n${window.location.href}`,
-  ), [product.name]);
   const hasDiscount = product.mrp && product.price && Number(product.mrp) > Number(product.price);
   const discountPct = hasDiscount ? Math.round(((Number(product.mrp) - Number(product.price)) / Number(product.mrp)) * 100) : 0;
 

@@ -37,6 +37,7 @@ const AdminManageReviewsPage      = lazy(() => import('./pages/admin/AdminManage
 import { useAuth } from './services/auth';
 import { CartProvider } from './services/cart';
 import { WishlistProvider } from './services/wishlist';
+import { SiteConfigProvider } from './services/siteConfig';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuth();
@@ -53,6 +54,7 @@ const AdminFallback = () => (
 export default function App() {
   return (
     <ErrorBoundary>
+      <SiteConfigProvider>
       <CartProvider>
         <WishlistProvider>
           <Routes>
@@ -99,6 +101,7 @@ export default function App() {
           </Routes>
         </WishlistProvider>
       </CartProvider>
+      </SiteConfigProvider>
     </ErrorBoundary>
   );
 }

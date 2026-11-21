@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, ShoppingBag, Heart, X } from 'lucide-react';
-import logo from '../../assets/final-logo.png';
+import logo from '../../assets/final-logo.webp';
 
 const NAV_LINKS = [
   { to: '/',            label: 'Home',        exact: true },

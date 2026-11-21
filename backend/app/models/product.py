@@ -6,6 +6,7 @@ from typing import Optional, List
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.validators import utcnow
 from app.db.session import Base
 
 
@@ -52,7 +53,7 @@ class Product(Base):
     category = relationship("Category")
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=utcnow
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), nullable=True

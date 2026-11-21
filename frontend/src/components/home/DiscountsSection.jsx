@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { ProductCard } from '../ui/ProductCard';
 import { SkeletonCard } from '../ui/SkeletonCard';
-import flower from '../../assets/flower.png';
+import flower from '../../assets/flower.webp';
 
 export function DiscountsSection({ products = [], loading = false, whatsappNumber, onAddToCart }) {
   const discounted = products.filter((p) => p.mrp && p.mrp > p.price);

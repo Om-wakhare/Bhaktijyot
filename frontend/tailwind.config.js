@@ -90,10 +90,28 @@ export default {
         display: ['Playfair Display', 'Georgia', 'serif'],
       },
 
+      // Fine-grained steps used across the UI (e.g. bg-white/6, border-espresso/8)
+      opacity: {
+        6: '0.06',
+        8: '0.08',
+        12: '0.12',
+        15: '0.15',
+      },
+
+      spacing: {
+        4.5: '1.125rem',
+        18:  '4.5rem',
+      },
+
+      transitionDuration: {
+        400: '400ms',
+      },
+
       animation: {
         shimmer:   'shimmer 1.5s linear infinite',
         'fade-up': 'fadeUp 0.6s ease-out',
         marquee:   'marquee 30s linear infinite',
+        'marquee-reverse': 'marquee-reverse 30s linear infinite',
       },
 
       keyframes: {
@@ -108,6 +126,10 @@ export default {
         marquee: {
           '0%':   { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(-50%)' },
+        },
+        'marquee-reverse': {
+          '0%':   { transform: 'translateX(-50%)' },
+          '100%': { transform: 'translateX(0)' },
         },
       },
     },

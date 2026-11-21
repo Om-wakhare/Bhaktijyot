@@ -21,21 +21,64 @@
   }
 }
 
-@keyframes shimmer {
+/* Named bj-shimmer so it never collides with Tailwind's `shimmer` keyframes */
+@keyframes bj-shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* Shared marquee keyframes — use these instead of re-declaring per component */
+@keyframes bj-marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes bj-marquee-reverse {
+  0%   { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
 }
 
 @layer utilities {
   .shimmer-bg {
     background: linear-gradient(90deg, #F4E4D1 25%, #E8CAA8 50%, #F4E4D1 75%);
     background-size: 200% 100%;
-    animation: shimmer 1.5s linear infinite;
+    animation: bj-shimmer 1.5s linear infinite;
   }
 
   .font-display {
     font-family: 'Playfair Display', Georgia, serif;
   }
+
+  /* Horizontal marquee track: render the item list twice inside it.
+     Pauses on hover/focus; the duplicate copy should be aria-hidden. */
+  .bj-marquee-track {
+    display: flex;
+    width: max-content;
+    animation: bj-marquee var(--bj-marquee-duration, 40s) linear infinite;
+  }
+  .bj-marquee-track.bj-marquee-reverse {
+    animation-name: bj-marquee-reverse;
+  }
+  .bj-marquee:hover .bj-marquee-track,
+  .bj-marquee:focus-within .bj-marquee-track {
+    animation-play-state: paused;
+  }
+  /* Soft fade at both edges of a marquee viewport */
+  .bj-marquee-mask {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+            mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  }
+}
+
+/* Respect the OS "reduce motion" setting everywhere */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .bj-marquee-track { animation: none !important; }
+  .bj-marquee { overflow-x: auto; }
 }
 
 /* ── ProductCard shared styles (rendered once globally, not per-card) ── */
@@ -72,16 +115,24 @@
 .bj-wish-btn:hover { transform: scale(1.12); }
 .bj-wish-btn[aria-label="Remove from wishlist"] { background: #1D3D2C; }
 
+/* Quick-add overlay: only on devices that can hover. While hidden it must not
+   intercept taps, otherwise touching the image adds to cart by accident. */
 .bj-quick-wrap {
   position: absolute; bottom: 0; left: 0; right: 0; z-index: 2;
   padding: 40px 12px 12px;
   background: linear-gradient(to top, rgba(22,10,4,0.84), transparent);
-  display: flex; justify-content: center;
+  display: none; justify-content: center;
   opacity: 0; transform: translateY(6px);
+  pointer-events: none;
   transition: opacity 0.26s ease, transform 0.26s ease;
 }
-.bj-card:hover .bj-quick-wrap {
-  opacity: 1; transform: translateY(0);
+@media (hover: hover) and (pointer: fine) {
+  .bj-quick-wrap { display: flex; }
+  .bj-card:hover .bj-quick-wrap,
+  .bj-card:focus-within .bj-quick-wrap {
+    opacity: 1; transform: translateY(0);
+    pointer-events: auto;
+  }
 }
 .bj-quick-btn {
   display: flex; align-items: center; gap: 6px;
