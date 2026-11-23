@@ -6,9 +6,14 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import settings
+from app.core.security import get_current_admin
+
+log = logging.getLogger("app.instagram")
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
@@ -38,10 +43,12 @@ def _fetch_from_instagram() -> list[dict]:
         with urllib.request.urlopen(url, timeout=8) as resp:
             raw = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        raise HTTPException(status_code=502, detail=f"Instagram API error: {body}")
+        # Log the details server-side; never echo third-party responses to the public
+        log.warning("Instagram API error %s: %s", e.code, e.read().decode(errors="replace")[:500])
+        raise HTTPException(status_code=502, detail="Instagram is unavailable right now")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach Instagram: {exc}")
+        log.warning("Could not reach Instagram: %s", exc)
+        raise HTTPException(status_code=502, detail="Instagram is unavailable right now")
 
     items = raw.get("data", [])
     # Reels come through as VIDEO — keep only those, cap at 9
@@ -70,14 +77,20 @@ def get_reels():
     if _cache["reels"] is not None and (now - _cache["fetched_at"]) < settings.INSTAGRAM_CACHE_TTL:
         return {"reels": _cache["reels"], "cached": True}
 
-    reels = _fetch_from_instagram()
+    try:
+        reels = _fetch_from_instagram()
+    except HTTPException:
+        # Instagram down or token expired: keep showing the last good reels if we have them
+        if _cache["reels"] is not None:
+            return {"reels": _cache["reels"], "cached": True, "stale": True}
+        raise
     _cache["reels"] = reels
     _cache["fetched_at"] = now
     return {"reels": reels, "cached": False}
 
 
 @router.post("/refresh-token")
-def refresh_token():
+def refresh_token(_: str = Depends(get_current_admin)):
     """
     Extends a long-lived Instagram token by another 60 days.
     Call this endpoint monthly from the admin panel or a cron job.
@@ -95,10 +108,11 @@ def refresh_token():
         with urllib.request.urlopen(url, timeout=8) as resp:
             data = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        raise HTTPException(status_code=502, detail=f"Refresh failed: {body}")
+        log.warning("Instagram token refresh failed %s: %s", e.code, e.read().decode(errors="replace")[:500])
+        raise HTTPException(status_code=502, detail="Instagram refused the token refresh. The token may have expired.")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        log.warning("Instagram token refresh error: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach Instagram to refresh the token.")
 
     return {
         "new_token": data.get("access_token"),

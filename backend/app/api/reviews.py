@@ -14,6 +14,8 @@ from app.schemas.review import (
     ReviewCreate,
     ReviewFeedResponse,
     ReviewListResponse,
+    ReviewPublicListResponse,
+    ReviewPublicRead,
     ReviewRead,
     ReviewUpdateByAdmin,
 )
@@ -53,7 +55,7 @@ def reviews_feed(limit: int = 12, db: Session = Depends(get_db)):
             Review.created_at,
         )
         .join(Product, Product.id == Review.product_id)
-        .filter(Review.is_approved.is_(True))
+        .filter(Review.is_approved.is_(True), Product.is_active.isnot(False))
         .order_by(Review.created_at.desc(), Review.id.desc())
         .limit(limit)
         .all()
@@ -77,14 +79,15 @@ def reviews_feed(limit: int = 12, db: Session = Depends(get_db)):
     return {"items": items}
 
 
-@router.get("/product/{product_id}", response_model=ReviewListResponse)
+@router.get("/product/{product_id}", response_model=ReviewPublicListResponse)
 def list_product_reviews(
     product_id: int,
     page: int = 1,
     limit: int = 10,
-    approved_only: bool = True,
     db: Session = Depends(get_db),
 ):
+    """Public: approved reviews only, without the reviewer's phone or email.
+    (Admins see everything through GET /reviews/admin.)"""
     if page < 1:
         raise HTTPException(status_code=400, detail="page must be >= 1")
     if limit < 1 or limit > 100:
@@ -94,9 +97,7 @@ def list_product_reviews(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    query = db.query(Review).filter(Review.product_id == product_id)
-    if approved_only:
-        query = query.filter(Review.is_approved.is_(True))
+    query = db.query(Review).filter(Review.product_id == product_id, Review.is_approved.is_(True))
 
     total = query.count()
     items = (
@@ -106,17 +107,17 @@ def list_product_reviews(
         .all()
     )
 
-    return ReviewListResponse(items=items, page=page, limit=limit, total=total)
+    return ReviewPublicListResponse(items=items, page=page, limit=limit, total=total)
 
 
-@router.post("/product/{product_id}", response_model=ReviewRead, status_code=201)
+@router.post("/product/{product_id}", response_model=ReviewPublicRead, status_code=201)
 def create_review(
     product_id: int,
     payload: ReviewCreate,
     db: Session = Depends(get_db),
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
+    if not product or product.is_active is False:
         raise HTTPException(status_code=404, detail="Product not found")
 
     review = Review(

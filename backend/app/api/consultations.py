@@ -48,11 +48,13 @@ def list_consultations(
     db: Session = Depends(get_db),
     _: str = Depends(get_current_admin),
 ):
+    if page < 1 or not (1 <= limit <= 100):
+        raise HTTPException(status_code=400, detail="Invalid pagination parameters")
     q = db.query(Consultation)
     if status_filter:
         q = q.filter(Consultation.status == status_filter)
     total = q.count()
-    items = q.order_by(Consultation.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    items = q.order_by(Consultation.created_at.desc(), Consultation.id.desc()).offset((page - 1) * limit).limit(limit).all()
     return {"items": items, "total": total}
 
 

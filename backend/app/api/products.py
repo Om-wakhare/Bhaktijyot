@@ -1,21 +1,26 @@
 import io
+import logging
 import re
+import uuid
 from typing import List, Optional
 from pathlib import Path
-from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
-from PIL import Image as PilImage
-from sqlalchemy import asc, desc, or_, and_
+from PIL import Image as PilImage, ImageOps, UnidentifiedImageError
+from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.core.security import get_current_admin
+from app.core.security import get_current_admin, get_optional_admin, require_admin_for
+from app.core.validators import like_pattern
 from app.db.session import get_db
 from app.models.category import Category
+from app.models.order import OrderItem
 from app.models.product_image import ProductImage
 from app.models.product import Product
+from app.services.category_tree import WORLDS, category_ids_in_world, descendant_ids
+from app.services.storage import delete_public_file, public_path
 from app.schemas.product import (
     BulkRowError,
     BulkUploadResult,
@@ -29,10 +34,16 @@ from app.schemas.product import (
     ProductUpdate,
 )
 
+log = logging.getLogger("app.products")
+
 router = APIRouter(prefix="/products", tags=["products"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+ALLOWED_VIDEO_EXTS = {"mp4", "webm", "mov"}
+MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_BULK_BYTES = 5 * 1024 * 1024
+MAX_BULK_ROWS = 2000
 
 
 def _load_product(product_id: int, db: Session) -> Product:
@@ -58,19 +69,24 @@ def _make_slug(name: str) -> str:
 _PRODUCT_SIZE = 1000  # all product images are stored as 1000×1000 squares
 
 
-def _process_and_save_image(
-    content: bytes, upload_dir: Path, product_id: int, sort_order: int
-) -> str:
+def _process_and_save_image(content: bytes, upload_dir: Path, product_id: int) -> str:
     """
     Normalise an uploaded product image to a 1000×1000 square:
+    - Apply the camera's EXIF rotation (phone photos otherwise appear sideways)
     - Scale to fit inside 1000×1000 (no crop, aspect ratio preserved)
     - Centre on a white canvas so all stored images are exactly square
-    - Save as WebP quality=85
+    - Save as WebP quality=85 under a unique name (names must never be reused:
+      sort orders change when images are deleted or reordered)
     """
-    img = PilImage.open(io.BytesIO(content))
+    try:
+        img = PilImage.open(io.BytesIO(content))
+        img = ImageOps.exif_transpose(img)
+    except (UnidentifiedImageError, OSError, PilImage.DecompressionBombError):
+        raise HTTPException(status_code=400, detail="That file is not a readable image.")
 
-    # Flatten transparency onto white
-    if img.mode == "RGBA":
+    # Flatten any transparency onto white
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        img = img.convert("RGBA")
         bg = PilImage.new("RGB", img.size, (255, 255, 255))
         bg.paste(img, mask=img.split()[3])
         img = bg
@@ -86,13 +102,9 @@ def _process_and_save_image(
     offset_y = (_PRODUCT_SIZE - img.height) // 2
     canvas.paste(img, (offset_x, offset_y))
 
-    full_name = f"product_{product_id}_{sort_order}.webp"
-    full_path = upload_dir / full_name
-    canvas.save(full_path, "WEBP", quality=85, optimize=True)
-
-    return str(
-        PurePosixPath("static") / "uploads" / settings.PRODUCT_SUBDIR / full_name
-    )
+    full_name = f"product_{product_id}_{uuid.uuid4().hex[:12]}.webp"
+    canvas.save(upload_dir / full_name, "WEBP", quality=85, optimize=True)
+    return public_path("uploads", settings.PRODUCT_SUBDIR, full_name)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -125,13 +137,16 @@ def _clean_cell(v) -> Optional[str]:
     return s or None
 
 
-def _to_number(v):
+def _to_number(v, field: str = "value"):
     if v is None or (isinstance(v, str) and not v.strip()):
         return None
     try:
-        return float(v)
+        n = float(v)
     except (TypeError, ValueError):
-        raise ValueError(f"'{v}' is not a valid number")
+        raise ValueError(f"{field} '{v}' is not a valid number")
+    if n < 0:
+        raise ValueError(f"{field} cannot be negative")
+    return n
 
 
 @router.get("/bulk-template")
@@ -176,7 +191,9 @@ async def bulk_upload(
     if not name.endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="Please upload a .xlsx Excel file")
 
-    content = await file.read()
+    content = await file.read(MAX_BULK_BYTES + 1)
+    if len(content) > MAX_BULK_BYTES:
+        raise HTTPException(status_code=400, detail="The Excel file is too large (max 5 MB).")
     try:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except Exception:
@@ -186,6 +203,8 @@ async def bulk_upload(
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         raise HTTPException(status_code=400, detail="The sheet is empty")
+    if len(rows) > MAX_BULK_ROWS + 1:
+        raise HTTPException(status_code=400, detail=f"Too many rows — upload at most {MAX_BULK_ROWS} products at a time.")
 
     # Map header names → column index (case-insensitive)
     header = [(_clean_cell(c) or "").lower() for c in rows[0]]
@@ -251,15 +270,20 @@ async def bulk_upload(
             stock_raw = get(row, "stock")
             stock_val = -1
             if stock_raw is not None and str(stock_raw).strip() != "":
-                stock_val = int(float(stock_raw))
+                try:
+                    stock_val = int(float(stock_raw))
+                except (TypeError, ValueError):
+                    raise ValueError(f"stock '{stock_raw}' is not a whole number")
+                if stock_val < -1:
+                    raise ValueError("stock must be -1 (not tracked) or 0 and above")
 
             product = Product(
                 name=name_val,
                 slug=slug_val,
                 description=_clean_cell(get(row, "description")),
                 benefits=_clean_cell(get(row, "benefits")),
-                price=_to_number(get(row, "price")),
-                mrp=_to_number(get(row, "mrp")),
+                price=_to_number(get(row, "price"), "price"),
+                mrp=_to_number(get(row, "mrp"), "mrp"),
                 badge=_clean_cell(get(row, "badge")),
                 category_id=category_id,
                 stock=stock_val,
@@ -290,7 +314,9 @@ def list_products(
     category_id: Optional[int] = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
+    is_admin: bool = Depends(get_optional_admin),
 ):
+    require_admin_for(include_inactive, is_admin, "draft products")
     query = db.query(Product).options(
         selectinload(Product.images), selectinload(Product.category)
     )
@@ -310,10 +336,14 @@ def catalog_products(
     sort: str = "newest",
     in_stock: Optional[bool] = None,
     include_inactive: bool = False,
+    world: Optional[str] = None,
+    on_sale: Optional[bool] = None,
     page: int = 1,
     limit: int = 24,
     db: Session = Depends(get_db),
+    is_admin: bool = Depends(get_optional_admin),
 ):
+    require_admin_for(include_inactive, is_admin, "draft products")
     if page < 1:
         raise HTTPException(status_code=400, detail="page must be >= 1")
     if limit < 1 or limit > 100:
@@ -327,7 +357,22 @@ def catalog_products(
         query = query.filter(Product.is_active.isnot(False))  # NULL treated as active
 
     if category_id is not None:
-        query = query.filter(Product.category_id == category_id)
+        # A parent category includes everything in its subcategories
+        query = query.filter(Product.category_id.in_(descendant_ids(db, category_id)))
+
+    if world:
+        if world not in WORLDS:
+            raise HTTPException(status_code=400, detail=f"world must be one of: {', '.join(WORLDS)}")
+        world_ids = category_ids_in_world(db, world)
+        # Until an admin assigns categories to this world, show the full catalogue
+        # rather than an empty page.
+        if world_ids:
+            query = query.filter(Product.category_id.in_(world_ids))
+
+    if on_sale:
+        query = query.filter(
+            Product.price.isnot(None), Product.mrp.isnot(None), Product.mrp > Product.price
+        )
 
     if min_price is not None:
         query = query.filter(Product.price >= min_price)
@@ -338,14 +383,14 @@ def catalog_products(
     if in_stock is True:
         query = query.filter(Product.stock != 0)
 
-    if search:
-        s = f"%{search.strip()}%"
+    if search and search.strip():
+        pat = like_pattern(search)  # % and _ typed by users are matched literally
         query = query.filter(
             or_(
-                Product.name.ilike(s),
-                Product.slug.ilike(s),
-                Product.description.ilike(s),
-                Product.benefits.ilike(s),
+                Product.name.ilike(pat, escape="\\"),
+                Product.slug.ilike(pat, escape="\\"),
+                Product.description.ilike(pat, escape="\\"),
+                Product.benefits.ilike(pat, escape="\\"),
             )
         )
 
@@ -395,8 +440,15 @@ def get_product_by_slug(slug: str, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/{product_id}", response_model=ProductRead)
-def get_product(product_id: int, db: Session = Depends(get_db)):
-    return _load_product(product_id, db)
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    is_admin: bool = Depends(get_optional_admin),
+):
+    product = _load_product(product_id, db)
+    if product.is_active is False and not is_admin:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
 
 
 # ─────────────────────────────────────────────────────────────
@@ -481,11 +533,18 @@ def delete_product(
     db: Session = Depends(get_db),
     _: str = Depends(get_current_admin),
 ):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+    product = _load_product(product_id, db)
+    if db.query(OrderItem.id).filter(OrderItem.product_id == product_id).first():
+        raise HTTPException(
+            status_code=409,
+            detail="This product has orders, so it can't be deleted (order history needs it). "
+                   "Unpublish it instead by setting it to Draft.",
+        )
+    files = [img.image_path for img in product.images] + [product.image_path, product.video_path]
     db.delete(product)
     db.commit()
+    for f in set(filter(None, files)):
+        delete_public_file(f)
     return None
 
 
@@ -550,8 +609,8 @@ async def upload_product_media(
         sort_order = (next_sort.sort_order + 1) if next_sort else 0
 
         for fobj in incoming_images:
-            # Read content into memory for validation + processing
-            content = await fobj.read()
+            # Read at most limit+1 bytes so an oversized upload is rejected cheaply
+            content = await fobj.read(MAX_IMAGE_BYTES + 1)
 
             # Validate MIME type
             ct = (fobj.content_type or "").lower()
@@ -569,12 +628,12 @@ async def upload_product_media(
                 )
 
             # Process with Pillow and save as WebP
-            public_path = _process_and_save_image(content, upload_dir, product_id, sort_order)
+            saved_path = _process_and_save_image(content, upload_dir, product_id)
 
             db.add(
                 ProductImage(
                     product_id=product_id,
-                    image_path=public_path,
+                    image_path=saved_path,
                     sort_order=sort_order,
                 )
             )
@@ -593,15 +652,19 @@ async def upload_product_media(
                 product.image_path = first.image_path
 
     if video is not None:
-        video_ext = Path(video.filename).suffix.lstrip(".") if video.filename else "mp4"
-        video_name = f"product_{product_id}_video.{video_ext}"
-        video_path = upload_dir / video_name
-        content = await video.read()
-        with video_path.open("wb") as f:
-            f.write(content)
-        product.video_path = str(
-            PurePosixPath("static") / "uploads" / settings.PRODUCT_SUBDIR / video_name
-        )
+        video_ext = (Path(video.filename).suffix.lstrip(".") if video.filename else "").lower()
+        ct = (video.content_type or "").lower()
+        if video_ext not in ALLOWED_VIDEO_EXTS or not ct.startswith("video/"):
+            raise HTTPException(status_code=400, detail="Video must be an MP4, WebM or MOV file.")
+        content = await video.read(MAX_VIDEO_BYTES + 1)
+        if len(content) > MAX_VIDEO_BYTES:
+            raise HTTPException(status_code=400, detail="Video exceeds the 50 MB limit.")
+        video_name = f"product_{product_id}_video_{uuid.uuid4().hex[:10]}.{video_ext}"
+        (upload_dir / video_name).write_bytes(content)
+        old_video = product.video_path
+        product.video_path = public_path("uploads", settings.PRODUCT_SUBDIR, video_name)
+        if old_video and old_video != product.video_path:
+            delete_public_file(old_video)
 
     db.commit()
     return _load_product(product_id, db)
@@ -629,18 +692,10 @@ def delete_product_image(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    # Delete main file and thumbnail
-    upload_dir = settings.UPLOAD_DIR / settings.PRODUCT_SUBDIR
-    for filename in [
-        Path(image.image_path).name,
-        Path(image.image_path).stem + "_thumb.webp",
-    ]:
-        disk_path = upload_dir / filename
-        try:
-            if disk_path.exists() and disk_path.is_file():
-                disk_path.unlink()
-        except Exception:
-            pass
+    # Delete the file (and a legacy thumbnail, if one was ever made)
+    delete_public_file(image.image_path)
+    stem = image.image_path.rsplit(".", 1)[0]
+    delete_public_file(f"{stem}_thumb.webp")
 
     was_primary = product.image_path == image.image_path
 
@@ -718,14 +773,20 @@ def set_primary_product_image(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    image = (
+    images = (
         db.query(ProductImage)
-        .filter(ProductImage.id == image_id, ProductImage.product_id == product_id)
-        .first()
+        .filter(ProductImage.product_id == product_id)
+        .order_by(ProductImage.sort_order.asc(), ProductImage.id.asc())
+        .all()
     )
-    if not image:
+    chosen = next((img for img in images if img.id == image_id), None)
+    if chosen is None:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    product.image_path = image.image_path
+    # "Primary" means first everywhere: move it to position 0, keep the rest in order
+    ordered = [chosen] + [img for img in images if img.id != image_id]
+    for idx, img in enumerate(ordered):
+        img.sort_order = idx
+    product.image_path = chosen.image_path
     db.commit()
     return _load_product(product_id, db)
