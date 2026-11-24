@@ -1,21 +1,36 @@
 import { useEffect, useState } from 'react';
 import { Play } from 'lucide-react';
+import api from '../../services/apiClient';
 
-function IgIcon({ style }) {
+/** The shop's Instagram account — single source of truth (Footer and Contact reuse it). */
+export const INSTAGRAM = {
+  handle: '@bhaktijyot_gems',
+  url: 'https://www.instagram.com/bhaktijyot_gems/',
+};
+
+/** Outline Instagram glyph. Decorative — label the surrounding link instead. */
+export function IgIcon({ style, className }) {
   return (
-    <svg style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      style={style}
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
       <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
       <circle cx="12" cy="12" r="4.5"/>
       <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
     </svg>
   );
 }
-import api from '../../services/apiClient';
 
-const IG_HANDLE = '@bhaktijyot_gems';
-const IG_URL    = 'https://www.instagram.com/bhaktijyot_gems/';
-
-function ReelCard({ reel, index }) {
+function ReelCard({ reel }) {
   const [hover, setHover] = useState(false);
 
   const caption = reel.caption
@@ -26,9 +41,13 @@ function ReelCard({ reel, index }) {
     <a
       href={reel.permalink}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
+      aria-label={`${caption || 'Instagram reel'} (opens Instagram in a new tab)`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF8F0]"
       style={{
         display: 'block',
         position: 'relative',
@@ -42,15 +61,15 @@ function ReelCard({ reel, index }) {
         transition: 'border 0.22s, box-shadow 0.22s, transform 0.22s',
         transform: hover ? 'translateY(-4px)' : 'translateY(0)',
         background: '#1C1209',
-        animationDelay: `${index * 80}ms`,
       }}
     >
       {/* Thumbnail */}
       {reel.thumbnail_url && (
         <img
           src={reel.thumbnail_url}
-          alt={caption || 'Instagram reel'}
+          alt=""
           loading="lazy"
+          decoding="async"
           style={{
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
@@ -62,7 +81,7 @@ function ReelCard({ reel, index }) {
       )}
 
       {/* Dark gradient overlay */}
-      <div style={{
+      <div aria-hidden="true" style={{
         position: 'absolute', inset: 0,
         background: hover
           ? 'linear-gradient(to top, rgba(28,18,9,0.88) 0%, rgba(28,18,9,0.20) 55%, transparent 100%)'
@@ -71,7 +90,7 @@ function ReelCard({ reel, index }) {
       }} />
 
       {/* Play button */}
-      <div style={{
+      <div aria-hidden="true" style={{
         position: 'absolute', inset: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         opacity: hover ? 1 : 0.75,
@@ -86,18 +105,13 @@ function ReelCard({ reel, index }) {
           boxShadow: hover ? '0 4px 20px rgba(201,168,76,0.50)' : '0 2px 12px rgba(0,0,0,0.30)',
           transition: 'background 0.22s, box-shadow 0.22s',
         }}>
-          <Play style={{
-            width: 18, height: 18,
-            fill: hover ? '#1C1209' : '#1C1209',
-            color: hover ? '#1C1209' : '#1C1209',
-            marginLeft: 2,
-          }} />
+          <Play style={{ width: 18, height: 18, fill: '#1C1209', color: '#1C1209', marginLeft: 2 }} />
         </div>
       </div>
 
-      {/* Caption on hover */}
+      {/* Caption on hover / keyboard focus (the link's aria-label already carries it) */}
       {caption && (
-        <p style={{
+        <p aria-hidden="true" style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
           padding: '0.75rem',
           color: 'rgba(255,248,240,0.90)', fontSize: '0.72rem', lineHeight: 1.45,
@@ -114,40 +128,38 @@ function ReelCard({ reel, index }) {
 }
 
 function SkeletonReel() {
-  return (
-    <div style={{
-      aspectRatio: '9/16', borderRadius: '0.875rem',
-      background: 'linear-gradient(110deg, #EAD9C4 30%, #F4E4D1 50%, #EAD9C4 70%)',
-      backgroundSize: '200% 100%',
-      animation: 'ig-shimmer 1.4s infinite linear',
-    }} />
-  );
+  return <div className="shimmer-bg" style={{ aspectRatio: '9/16', borderRadius: '0.875rem' }} />;
 }
 
 export function InstagramReels() {
-  const [reels, setReels]   = useState([]);
+  const [reels, setReels]     = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState('');
+  const [failed, setFailed]   = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     api.get('/instagram')
-      .then((res) => setReels(res.data?.reels || []))
-      .catch(() => setError('Could not load reels right now.'))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res.data?.reels) ? res.data.reels : [];
+        // Only keep reels we can actually link to
+        setReels(list.filter((r) => typeof r?.permalink === 'string' && r.permalink.startsWith('https://')));
+      })
+      // 503 = Instagram not configured yet; any error simply hides the section
+      .catch(() => { if (!cancelled) setFailed(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  // Don't render section at all if there's an error (token not set yet, etc.)
-  if (!loading && (error || reels.length === 0)) return null;
+  // Don't render the section at all if there's an error or nothing to show
+  if (!loading && (failed || reels.length === 0)) return null;
 
   return (
-    <section style={{ background: '#FFF8F0', padding: 'clamp(3.5rem,7vw,5.5rem) 0' }}>
-      <style>{`
-        @keyframes ig-shimmer {
-          0%   { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
-
+    <section
+      aria-labelledby="instagram-heading"
+      aria-busy={loading ? 'true' : undefined}
+      style={{ background: '#FFF8F0', padding: 'clamp(3.5rem,7vw,5.5rem) 0' }}
+    >
       <div style={{ maxWidth: '90rem', margin: '0 auto', padding: '0 1.25rem' }}>
 
         {/* ── Header ── */}
@@ -159,7 +171,7 @@ export function InstagramReels() {
             ✦ Follow Our Journey ✦
           </p>
 
-          <h2 style={{
+          <h2 id="instagram-heading" style={{
             display: 'inline-block',
             color: '#1C1209',
             fontSize: 'clamp(1.75rem,3.5vw,2.4rem)',
@@ -174,17 +186,17 @@ export function InstagramReels() {
 
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <a
-              href={IG_URL}
+              href={INSTAGRAM.url}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-                color: '#8B5E0A', fontSize: '0.8rem', fontWeight: 600,
+                color: '#7A5C3B', fontSize: '0.8rem', fontWeight: 600,
                 textDecoration: 'none',
               }}
             >
               <IgIcon style={{ width: 14, height: 14 }} />
-              {IG_HANDLE}
+              {INSTAGRAM.handle}
             </a>
           </div>
         </div>
@@ -197,7 +209,7 @@ export function InstagramReels() {
         }}>
           {loading
             ? Array.from({ length: 6 }).map((_, i) => <SkeletonReel key={i} />)
-            : reels.map((r, i) => <ReelCard key={r.id} reel={r} index={i} />)
+            : reels.map((r) => <ReelCard key={r.id} reel={r} />)
           }
         </div>
 
@@ -205,9 +217,9 @@ export function InstagramReels() {
         {!loading && reels.length > 0 && (
           <div style={{ textAlign: 'center', marginTop: 'clamp(2rem,4vw,2.75rem)' }}>
             <a
-              href={IG_URL}
+              href={INSTAGRAM.url}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                 background: 'linear-gradient(135deg, #C9A84C 0%, #A07830 100%)',

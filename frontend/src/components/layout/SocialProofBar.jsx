@@ -11,10 +11,27 @@ const STATS = [
 function Badge({ stat }) {
   return (
     <div className="flex items-center gap-1.5 whitespace-nowrap">
-      <Star className="h-3.5 w-3.5 fill-gold text-gold shrink-0" />
+      <Star className="h-3.5 w-3.5 fill-gold text-gold shrink-0" aria-hidden="true" />
       <span className="text-xs font-bold text-espresso">{stat.value}</span>
-      <span className="text-xs text-espresso/55">{stat.label}</span>
+      <span className="text-xs text-espresso/70">{stat.label}</span>
     </div>
+  );
+}
+
+/** One copy of the badge row used by the marquee. */
+function BadgeRow({ duplicate = false }) {
+  return (
+    <ul
+      className={`flex items-center shrink-0 ${duplicate ? 'motion-reduce:hidden' : ''}`}
+      aria-hidden={duplicate ? 'true' : undefined}
+    >
+      {STATS.map((stat) => (
+        <li key={stat.label} className="flex items-center">
+          <Badge stat={stat} />
+          <span className="px-5 text-gold/60" aria-hidden="true">✦</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -22,36 +39,22 @@ export function SocialProofBar() {
   return (
     <div className="border-b border-espresso/10 py-3 overflow-hidden" style={{ backgroundColor: '#F4E4D1' }}>
 
-      {/* Desktop — static evenly-spaced row */}
-      <div className="hidden sm:block max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10">
-        <div className="flex items-center justify-between">
-          {STATS.map((stat, i) => <Badge key={i} stat={stat} />)}
-        </div>
-      </div>
-
-      {/* Mobile — classic marquee */}
-      <div className="sm:hidden">
-        <div className="spb-marquee flex whitespace-nowrap">
-          {[0, 1].map((k) => (
-            <div key={k} className="flex items-center shrink-0">
-              {STATS.map((stat, i) => (
-                <div key={i} className="flex items-center">
-                  <Badge stat={stat} />
-                  <span className="px-5 text-gold/60" aria-hidden="true">✦</span>
-                </div>
-              ))}
-            </div>
+      {/* Wide screens — static evenly-spaced row (5 badges need ~700px, so lg+) */}
+      <div className="hidden lg:block max-w-screen-xl mx-auto px-10">
+        <ul className="flex items-center justify-between">
+          {STATS.map((stat) => (
+            <li key={stat.label}><Badge stat={stat} /></li>
           ))}
-        </div>
+        </ul>
       </div>
 
-      <style>{`
-        .spb-marquee { width: max-content; animation: spb-scroll 22s linear infinite; }
-        @keyframes spb-scroll {
-          from { transform: translateX(0); }
-          to   { transform: translateX(-50%); }
-        }
-      `}</style>
+      {/* Phones & tablets — marquee (shared .bj-marquee classes) */}
+      <div className="lg:hidden bj-marquee overflow-hidden">
+        <div className="bj-marquee-track" style={{ '--bj-marquee-duration': '22s' }}>
+          <BadgeRow />
+          <BadgeRow duplicate />
+        </div>
+      </div>
     </div>
   );
 }

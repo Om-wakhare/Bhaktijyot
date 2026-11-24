@@ -113,7 +113,10 @@
   transition: background 0.2s, transform 0.2s, color 0.2s;
 }
 .bj-wish-btn:hover { transform: scale(1.12); }
-.bj-wish-btn[aria-label="Remove from wishlist"] { background: #1D3D2C; }
+.bj-wish-btn[aria-pressed="true"] { background: #1D3D2C; }
+.bj-wish-btn:focus-visible,
+.bj-cta:focus-visible { outline: 2px solid #1D3D2C; outline-offset: 2px; }
+.bj-quick-btn:focus-visible { outline: 2px solid #E5D090; outline-offset: 2px; }
 
 /* Quick-add overlay: only on devices that can hover. While hidden it must not
    intercept taps, otherwise touching the image adds to cart by accident. */

@@ -29,15 +29,16 @@ export function HeroSection({
   return (
     <section className="relative overflow-hidden min-h-[88vh] flex items-center">
 
-      {/* Background image */}
+      {/* Background image (decorative — the heading carries the meaning) */}
       <img
         src={bg}
-        alt="Bhaktijyot"
+        alt=""
+        aria-hidden="true"
         className="absolute inset-0 w-full h-full object-cover object-center"
       />
 
       {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-r from-espresso/85 via-espresso/55 to-transparent" />
+      <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-espresso/85 via-espresso/55 to-transparent" />
 
       {/* Content box — golden glittery border */}
       <div className="relative z-10 w-full max-w-screen-xl mx-auto px-6 sm:px-10 lg:px-16 py-16">
@@ -99,19 +100,20 @@ export function HeroSection({
 
           {/* Trust line */}
           {trustLine && (
-            <p style={{ color: 'rgba(255,245,230,0.40)', fontSize: '0.72rem', fontWeight: 500 }}>
+            <p style={{ color: 'rgba(255,245,230,0.62)', fontSize: '0.72rem', fontWeight: 500 }}>
               {trustLine}
             </p>
           )}
 
           {/* Trust badges */}
-          <div
+          <ul
             className="flex items-center gap-6 pt-4"
             style={{ borderTop: '1px solid rgba(212,175,55,0.22)' }}
           >
             {TRUST_BADGES.map(({ icon: Icon, label }) => (
-              <div key={label} className="flex items-center gap-2">
+              <li key={label} className="flex items-center gap-2">
                 <div
+                  aria-hidden="true"
                   className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
                   style={{
                     border: '1px solid rgba(212,175,55,0.45)',
@@ -121,15 +123,16 @@ export function HeroSection({
                 >
                   <Icon className="h-3.5 w-3.5" style={{ color: GOLD }} />
                 </div>
+                {/* Icon-only on phones, but the label stays readable by screen readers */}
                 <span
-                  className="text-[10px] font-semibold leading-tight hidden sm:block"
-                  style={{ color: 'rgba(255,245,230,0.55)' }}
+                  className="text-[10px] font-semibold leading-tight sr-only sm:not-sr-only sm:block"
+                  style={{ color: 'rgba(255,245,230,0.72)' }}
                 >
                   {label}
                 </span>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
 
         </div>
       </div>

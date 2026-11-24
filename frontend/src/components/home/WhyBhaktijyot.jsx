@@ -1,4 +1,4 @@
-import { ShieldCheck, Gem, Star, Truck, Clock, Users } from 'lucide-react';
+import { ShieldCheck, Truck, Clock } from 'lucide-react';
 
 const STATS = [
   { value: '10,000+', label: 'Happy Customers' },
@@ -34,11 +34,11 @@ export function WhyBhaktijyot() {
           {/* Left column */}
           <div className="space-y-8">
             <div className="space-y-3">
-              <div className="text-[11px] font-semibold uppercase tracking-widest text-primary">Our Promise</div>
+              <div className="text-[11px] font-semibold uppercase tracking-widest text-gold">Our Promise</div>
               <h2 className="font-display text-3xl lg:text-4xl font-semibold text-white leading-snug">
                 Why Families Trust Bhaktijyot
               </h2>
-              <p className="text-white/60 text-sm leading-relaxed max-w-md">
+              <p className="text-white/70 text-sm leading-relaxed max-w-md">
                 Authenticity, devotion, and transparency — these are not just words for us. They are the foundation of every product we sell.
               </p>
             </div>
@@ -47,8 +47,8 @@ export function WhyBhaktijyot() {
             <div className="grid grid-cols-2 gap-3">
               {STATS.map(({ value, label }) => (
                 <div key={label} className="bg-white/6 border border-white/10 rounded-xl p-4 space-y-1">
-                  <div className="font-display text-2xl font-semibold text-primary">{value}</div>
-                  <div className="text-xs text-white/50">{label}</div>
+                  <div className="font-display text-2xl font-semibold text-gold">{value}</div>
+                  <div className="text-xs text-white/65">{label}</div>
                 </div>
               ))}
             </div>
@@ -61,12 +61,12 @@ export function WhyBhaktijyot() {
                 key={title}
                 className="flex gap-4 bg-white/5 border border-white/8 rounded-xl p-5 hover:bg-white/8 transition-colors"
               >
-                <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
-                  <Icon className="h-5 w-5 text-primary" />
+                <div className="h-10 w-10 rounded-xl bg-gold/15 flex items-center justify-center shrink-0" aria-hidden="true">
+                  <Icon className="h-5 w-5 text-gold" />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-semibold text-white">{title}</h3>
-                  <p className="text-xs text-white/50 leading-relaxed">{desc}</p>
+                  <p className="text-xs text-white/65 leading-relaxed">{desc}</p>
                 </div>
               </div>
             ))}

@@ -1,119 +1,250 @@
-import { useEffect, useState } from 'react';
-import api from '../../services/apiClient';
-import { Button, Card, Field, Input, Page } from '../../components/admin/ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import api, { getErrorMessage } from '../../services/apiClient';
+import { Alert, Button, Card, ErrorState, Field, Input, LoadingState, Page, Toggle } from '../../components/admin/ui';
+import { useToast } from '../../components/admin/Toast';
+import { phoneDigits, useLatestRequest } from '../../components/admin/adminUtils';
+
+const DEFAULT_WHATSAPP = '918484913170';
+const WHATSAPP_FIELDS = ['whatsapp_number'];
+const ANNOUNCEMENT_FIELDS = [
+  'announcement_enabled', 'announcement_message', 'announcement_cta_text', 'announcement_cta_link',
+];
+
+function fromConfig(data) {
+  return {
+    announcement_enabled: Boolean(data?.announcement_enabled),
+    announcement_message: data?.announcement_message ?? '',
+    announcement_cta_text: data?.announcement_cta_text ?? '',
+    announcement_cta_link: data?.announcement_cta_link ?? '/products',
+    whatsapp_number: data?.whatsapp_number ?? DEFAULT_WHATSAPP,
+  };
+}
+
+function pick(obj, keys) {
+  return Object.fromEntries(keys.map((k) => [k, obj[k]]));
+}
+
+/** Digits only (spaces, +, -, brackets and dots stripped). */
+function normalizeWhatsApp(value) {
+  return String(value ?? '').replace(/[\s+\-().]/g, '');
+}
+
+function whatsAppError(value) {
+  const v = normalizeWhatsApp(value);
+  if (!v) return 'Enter the WhatsApp number.';
+  if (!/^\d+$/.test(v)) return 'Use digits only (spaces and + are removed automatically).';
+  if (v.length < 10 || v.length > 15) return 'Enter 10–15 digits including the country code, e.g. 918484913170.';
+  return '';
+}
 
 export function AdminSettingsPage() {
+  const toast = useToast();
+  const beginRequest = useLatestRequest();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [form, setForm] = useState({
-    announcement_enabled: true,
-    announcement_message: '',
-    announcement_cta_text: '',
-    announcement_cta_link: '/products',
-    whatsapp_number: '918484913170',
-  });
+  const [loadError, setLoadError] = useState('');
+  const [form, setForm] = useState(fromConfig(null));
 
-  const load = async () => {
+  // Each card saves only its own fields and shows its own messages
+  const [waSaving, setWaSaving] = useState(false);
+  const [waMsg, setWaMsg] = useState(null); // { tone, text }
+  const [annSaving, setAnnSaving] = useState(false);
+  const [annMsg, setAnnMsg] = useState(null);
+  const [annReloading, setAnnReloading] = useState(false);
+
+  // Instagram token
+  const [igLoading, setIgLoading] = useState(false);
+  const [igError, setIgError] = useState('');
+  const [igResult, setIgResult] = useState(null);
+  const tokenInputRef = useRef(null);
+
+  const load = useCallback(async () => {
+    const isCurrent = beginRequest();
     setLoading(true);
-    setError('');
-    setSuccess('');
+    setLoadError('');
     try {
       const res = await api.get('/site-config');
-      setForm({
-        announcement_enabled: Boolean(res.data.announcement_enabled),
-        announcement_message: res.data.announcement_message ?? '',
-        announcement_cta_text: res.data.announcement_cta_text ?? '',
-        announcement_cta_link: res.data.announcement_cta_link ?? '/products',
-        whatsapp_number: res.data.whatsapp_number ?? '918484913170',
-      });
-    } catch {
-      setError('Failed to load settings.');
+      if (isCurrent()) setForm(fromConfig(res.data));
+    } catch (err) {
+      if (isCurrent()) setLoadError(getErrorMessage(err, 'Failed to load settings.'));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
+    }
+  }, [beginRequest]);
+
+  /** Reload only the announcement fields (keeps unsaved edits in the WhatsApp card). */
+  const reloadAnnouncement = async () => {
+    setAnnMsg(null);
+    setAnnReloading(true);
+    try {
+      const res = await api.get('/site-config');
+      const next = fromConfig(res.data);
+      setForm((prev) => ({ ...prev, ...pick(next, ANNOUNCEMENT_FIELDS) }));
+    } catch (err) {
+      setAnnMsg({ tone: 'error', text: getErrorMessage(err, 'Could not reload the announcement.') });
+    } finally {
+      setAnnReloading(false);
     }
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    if (WHATSAPP_FIELDS.includes(name)) setWaMsg(null);
+    else setAnnMsg(null);
     setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  const handleSubmit = async (e) => {
+  const saveWhatsApp = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError('');
-    setSuccess('');
-    try {
-      await api.put('/site-config', {
-        announcement_enabled: form.announcement_enabled,
-        announcement_message: form.announcement_message,
-        announcement_cta_text: form.announcement_cta_text,
-        announcement_cta_link: form.announcement_cta_link,
-        whatsapp_number: form.whatsapp_number,
-      });
-      setSuccess('Saved successfully.');
-    } catch {
-      setError('Failed to save settings.');
-    } finally {
-      setSaving(false);
+    if (waSaving) return;
+    const err = whatsAppError(form.whatsapp_number);
+    if (err) {
+      setWaMsg({ tone: 'error', text: err });
+      return;
     }
+    const number = normalizeWhatsApp(form.whatsapp_number);
+    setWaSaving(true);
+    setWaMsg(null);
+    try {
+      const res = await api.put('/site-config', { whatsapp_number: number });
+      const saved = fromConfig(res.data);
+      setForm((prev) => ({ ...prev, ...pick(saved, WHATSAPP_FIELDS) }));
+      setWaMsg({ tone: 'success', text: 'WhatsApp number saved.' });
+    } catch (error) {
+      setWaMsg({ tone: 'error', text: getErrorMessage(error, 'Failed to save the WhatsApp number.') });
+    } finally {
+      setWaSaving(false);
+    }
+  };
+
+  const saveAnnouncement = async (e) => {
+    e.preventDefault();
+    if (annSaving) return;
+    if (form.announcement_enabled && !form.announcement_message.trim()) {
+      setAnnMsg({ tone: 'error', text: 'Enter a message, or turn the announcement off.' });
+      return;
+    }
+    setAnnSaving(true);
+    setAnnMsg(null);
+    try {
+      const res = await api.put('/site-config', {
+        announcement_enabled: form.announcement_enabled,
+        announcement_message: form.announcement_message.trim(),
+        announcement_cta_text: form.announcement_cta_text.trim(),
+        announcement_cta_link: form.announcement_cta_link.trim(),
+      });
+      const saved = fromConfig(res.data);
+      setForm((prev) => ({ ...prev, ...pick(saved, ANNOUNCEMENT_FIELDS) }));
+      setAnnMsg({ tone: 'success', text: 'Announcement saved.' });
+    } catch (error) {
+      setAnnMsg({ tone: 'error', text: getErrorMessage(error, 'Failed to save the announcement.') });
+    } finally {
+      setAnnSaving(false);
+    }
+  };
+
+  const refreshInstagramToken = async () => {
+    if (igLoading) return;
+    setIgLoading(true);
+    setIgError('');
+    setIgResult(null);
+    try {
+      const res = await api.post('/instagram/refresh-token');
+      if (!res.data?.new_token) {
+        setIgError('Instagram did not return a new token. Please try again later.');
+      } else {
+        setIgResult(res.data);
+      }
+    } catch (err) {
+      // 503 = not configured, 502 = Instagram refused / unreachable
+      setIgError(getErrorMessage(err, 'Could not refresh the Instagram token.'));
+    } finally {
+      setIgLoading(false);
+    }
+  };
+
+  const copyToken = async () => {
+    const token = igResult?.new_token;
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      toast.success('Token copied to clipboard');
+    } catch {
+      // Clipboard API unavailable (e.g. non-HTTPS) — select the text so it can be copied manually
+      const el = tokenInputRef.current;
+      if (el) {
+        el.focus();
+        el.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+        if (ok) toast.success('Token copied to clipboard');
+        else toast.info('Press Ctrl+C (or ⌘C) to copy the selected token');
+      }
+    }
+  };
+
+  const igDays = igResult?.expires_in_seconds ? Math.round(igResult.expires_in_seconds / 86400) : null;
+  const igExpiry = igResult?.expires_in_seconds
+    ? new Date(Date.now() + igResult.expires_in_seconds * 1000).toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+    })
+    : null;
+
+  const waDigits = phoneDigits(form.whatsapp_number);
+  const waLooksLocal = waDigits.length === 10 && /^[6-9]/.test(waDigits);
+
+  const settingsBody = (content) => {
+    if (loading) return <LoadingState label="Loading settings…" className="py-6" />;
+    if (loadError) return <ErrorState message={loadError} onRetry={load} className="py-6" />;
+    return content;
   };
 
   return (
     <Page title="Settings" description="Manage global website settings.">
       <Card title="Contact & WhatsApp" subtitle="WhatsApp number used for all order links on the storefront.">
-        {loading ? (
-          <div className="text-sm text-gray-500">Loading settings...</div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Field label="WhatsApp Number" hint="Include country code without + (e.g. 918484913170 for India)">
+        {settingsBody(
+          <form onSubmit={saveWhatsApp} className="space-y-4" noValidate>
+            <Field
+              label="WhatsApp Number"
+              htmlFor="whatsapp_number"
+              hint={
+                waLooksLocal
+                  ? 'This looks like a number without the country code — for India add 91 in front (e.g. 918484913170).'
+                  : 'Digits only, including the country code (10–15 digits), e.g. 918484913170 for India.'
+              }
+            >
               <Input
+                id="whatsapp_number"
                 name="whatsapp_number"
                 value={form.whatsapp_number}
                 onChange={handleChange}
-                placeholder="918484913170"
+                placeholder={DEFAULT_WHATSAPP}
+                inputMode="tel"
+                autoComplete="off"
                 maxLength={30}
               />
             </Field>
             <p className="text-xs text-gray-500">
-              This number appears on the "Order on WhatsApp" buttons across the storefront.
+              This number appears on the “Order on WhatsApp” buttons across the storefront.
             </p>
-            {error && <div className="text-sm text-red-600">{error}</div>}
-            {success && <div className="text-sm text-green-600">{success}</div>}
-            <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save WhatsApp'}</Button>
-          </form>
+            {waMsg && <Alert tone={waMsg.tone}>{waMsg.text}</Alert>}
+            <Button type="submit" disabled={waSaving}>{waSaving ? 'Saving…' : 'Save WhatsApp'}</Button>
+          </form>,
         )}
       </Card>
 
       <Card title="Announcement Bar" subtitle="Shown at the top of the public website header.">
-        {loading ? (
-          <div className="text-sm text-gray-500">Loading settings...</div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Enable announcement</div>
-                <div className="text-xs text-gray-500">Turn on/off the announcement strip.</div>
-              </div>
-              <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
-                <input
-                  type="checkbox"
-                  name="announcement_enabled"
-                  checked={form.announcement_enabled}
-                  onChange={handleChange}
-                  className="h-4 w-4"
-                />
-                Enabled
-              </label>
-            </div>
+        {settingsBody(
+          <form onSubmit={saveAnnouncement} className="space-y-4" noValidate>
+            <Toggle
+              checked={form.announcement_enabled}
+              onChange={(v) => { setAnnMsg(null); setForm((prev) => ({ ...prev, announcement_enabled: v })); }}
+              label={form.announcement_enabled ? 'Announcement shown' : 'Announcement hidden'}
+              description="Turn the announcement strip on or off."
+            />
 
-            <Field label="Message" hint="Max 300 characters">
+            <Field label="Message" hint={`${form.announcement_message.length}/300 characters`}>
               <Input
                 name="announcement_message"
                 value={form.announcement_message}
@@ -145,19 +276,59 @@ export function AdminSettingsPage() {
               </Field>
             </div>
 
-            {error && <div className="text-sm text-red-600">{error}</div>}
-            {success && <div className="text-sm text-green-600">{success}</div>}
+            {annMsg && <Alert tone={annMsg.tone}>{annMsg.text}</Alert>}
 
             <div className="flex flex-col sm:flex-row gap-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving...' : 'Save'}
+              <Button type="submit" disabled={annSaving}>
+                {annSaving ? 'Saving…' : 'Save announcement'}
               </Button>
-              <Button type="button" variant="outline" onClick={load} disabled={saving}>
-                Reload
+              <Button variant="outline" onClick={reloadAnnouncement} disabled={annSaving || annReloading}>
+                {annReloading ? 'Reloading…' : 'Reload'}
               </Button>
             </div>
-          </form>
+          </form>,
         )}
+      </Card>
+
+      <Card
+        title="Instagram token"
+        subtitle="The storefront’s Instagram reels use a long-lived access token that must be refreshed before it expires."
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Refresh the token about once a month. Tokens last 60 days; an expired token can’t be refreshed here.
+          </p>
+          <Button onClick={refreshInstagramToken} disabled={igLoading}>
+            {igLoading ? 'Refreshing…' : 'Refresh Instagram token'}
+          </Button>
+
+          {igError && <Alert tone="error">{igError}</Alert>}
+
+          {igResult?.new_token && (
+            <div className="space-y-3">
+              <Field
+                label="New access token"
+                htmlFor="ig-token"
+                hint={igDays ? `Valid for about ${igDays} days${igExpiry ? ` (until ${igExpiry})` : ''}.` : undefined}
+              >
+                <div className="flex gap-2">
+                  <Input
+                    id="ig-token"
+                    ref={tokenInputRef}
+                    value={igResult.new_token}
+                    readOnly
+                    onFocus={(e) => e.target.select()}
+                    className="flex-1 font-mono text-xs"
+                  />
+                  <Button variant="outline" onClick={copyToken} className="shrink-0">Copy</Button>
+                </div>
+              </Field>
+              <Alert tone="warning" title="One more step">
+                Update INSTAGRAM_ACCESS_TOKEN in Railway → Variables, then redeploy. Tokens last 60 days.
+              </Alert>
+            </div>
+          )}
+        </div>
       </Card>
     </Page>
   );

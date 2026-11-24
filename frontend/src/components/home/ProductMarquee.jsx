@@ -75,6 +75,9 @@ function MarqueeCopy({ items, onAddToCart, duplicate = false }) {
  *   params      — query params for GET /products/catalog (keep the object stable)
  *   filter      — optional client-side predicate applied to the fetched items
  *   maxItems    — how many cards to show (default 12)
+ *   showSkeleton — show placeholder cards while loading (default true). Turn it
+ *                  off for sections that are often empty, so the page doesn't
+ *                  show a block of skeletons that then collapses.
  */
 export function ProductMarquee({
   id,
@@ -85,6 +88,7 @@ export function ProductMarquee({
   params,
   filter,
   maxItems = 12,
+  showSkeleton = true,
 }) {
   const { addItem } = useCart();
   const [products, setProducts] = useState([]);
@@ -114,6 +118,7 @@ export function ProductMarquee({
 
   const list = (filter ? products.filter(filter) : products).slice(0, maxItems);
 
+  if (loading && !showSkeleton) return null;
   if (!loading && list.length === 0) return null;
 
   const items = loading
@@ -130,8 +135,9 @@ export function ProductMarquee({
       style={{ background: '#FFF8F0' }}
     >
       {/* ── Header — centered; "View all" sits below the divider on small
-             screens and moves to the right edge only on wide screens ── */}
-      <div className="relative text-center mb-10 px-4">
+             screens and moves to the right edge only on wide screens, where
+             the side padding keeps it clear of the heading ── */}
+      <div className="relative text-center mb-10 px-4 lg:px-44">
         <p style={EYEBROW_STYLE}>{eyebrow}</p>
 
         <h2 id={headingId} style={HEADING_STYLE}>
@@ -156,7 +162,7 @@ export function ProductMarquee({
       </div>
 
       {/* ── Infinite marquee (shared .bj-marquee classes; pauses on hover/focus) ── */}
-      <div className="bj-marquee bj-marquee-mask">
+      <div className="bj-marquee bj-marquee-mask overflow-hidden">
         <div className="bj-marquee-track" style={{ '--bj-marquee-duration': duration }}>
           <MarqueeCopy items={items} onAddToCart={addItem} />
           <MarqueeCopy items={items} onAddToCart={addItem} duplicate />
