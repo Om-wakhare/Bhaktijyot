@@ -1,64 +1,17 @@
 import { useEffect, useRef, useState, Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Environment } from '@react-three/drei';
-// Self-hosted copy of drei's "studio" preset — avoids a runtime fetch from raw.githack.com
-import studioHdr from '../../assets/hdri/studio_small_03_1k.hdr';
+import { Canvas } from '@react-three/fiber';
+import { PerformanceMonitor } from '@react-three/drei';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import ScrollTrigger from 'gsap/ScrollTrigger';
-import * as THREE from 'three';
-
-/* ── Crystal PBR configs — per-stone scientific tuning ───────── */
-const CRYSTALS = [
-  // Amethyst — deep transparent purple, strong dispersion
-  { name:'Amethyst',
-    color:'#6B2090', emissive:'#180428', ei:0.28,
-    tx:0.88, tk:1.0,  rg:0.02, ior:1.77, cc:1, cr:0.02,
-    ac:'#9040C8', ad:0.18, disp:0.5 },
-
-  // Rose Quartz — soft milky pink, slightly cloudy (not perfectly clear)
-  { name:'Rose Quartz',
-    color:'#E8A0B4', emissive:'#380818', ei:0.12,
-    tx:0.78, tk:0.8,  rg:0.08, ior:1.54, cc:0.9, cr:0.06,
-    ac:'#F8C8D8', ad:0.45, disp:0.25 },
-
-  // Citrine — warm golden, highly transparent
-  { name:'Citrine',
-    color:'#E8A800', emissive:'#402800', ei:0.18,
-    tx:0.90, tk:0.9,  rg:0.02, ior:1.55, cc:1, cr:0.02,
-    ac:'#FFD860', ad:0.22, disp:0.6 },
-
-  // Clear Quartz — near-colourless, maximum light play
-  { name:'Clear Quartz',
-    color:'#DCF0FF', emissive:'#0C2040', ei:0.06,
-    tx:0.97, tk:1.1,  rg:0.01, ior:1.54, cc:1, cr:0.01,
-    ac:'#EEF8FF', ad:1.80, disp:0.8 },
-
-  // Tiger Eye — opaque, golden chatoyant sheen (fuchsite sheen approximation)
-  { name:'Tiger Eye',
-    color:'#8B5C10', emissive:'#1C0C00', ei:0.12,
-    tx:0.0,  tk:0.1,  rg:0.28, ior:1.58, cc:0.6, cr:0.22,
-    mn:0.55, ac:'#C08820', ad:0.05,
-    sh:0.85, shc:'#D4A030', shr:0.35, disp:0 },
-
-  // Black Obsidian — jet-black volcanic glass, mirror-like
-  { name:'Black Obsidian',
-    color:'#04050A', emissive:'#000002', ei:0.0,
-    tx:0.0,  tk:0.0,  rg:0.005, ior:1.50, cc:1, cr:0.0,
-    mn:0.0,  ac:'#04050A', ad:0.02, disp:0 },
-
-  // Green Aventurine — semi-transparent green with golden sparkle
-  { name:'Green Aventurine',
-    color:'#28743C', emissive:'#061A0C', ei:0.18,
-    tx:0.50, tk:0.7,  rg:0.10, ior:1.55, cc:0.9, cr:0.08,
-    mn:0.12, ac:'#50C870', ad:0.18, disp:0.3 },
-];
+import { BraceletScene } from './bracelet3d/BraceletScene';
+import { getPhase, getShowcaseIdx } from './bracelet3d/phases';
 
 /* ── Showcase: 4 crystal types ──────────────────────────────────  */
 const SHOWCASE = [
   {
-    crystal:    CRYSTALS[1],
+    stone:      'roseQuartz',
     leftStory:  'Treasured since ancient Egypt as the stone of unconditional love, Rose Quartz carries a gentle energy that opens the heart. Each bead is hand-selected for its soft, translucent warmth.',
     rightName:  'Rose Quartz',
     rightLine1: 'Love  ·  Compassion  ·  Healing',
@@ -67,7 +20,7 @@ const SHOWCASE = [
     cam:        [0.2, 3.8, 3.2],   // top-front view
   },
   {
-    crystal:    CRYSTALS[0],
+    stone:      'amethyst',
     leftStory:  'Worn by royalty and mystics across centuries, Amethyst clears the mind and opens intuition. Its deep violet resonates with higher consciousness and inner peace.',
     rightName:  'Amethyst',
     rightLine1: 'Clarity  ·  Intuition  ·  Protection',
@@ -76,7 +29,7 @@ const SHOWCASE = [
     cam:        [4.2, 2.2, 2.5],   // right-side view
   },
   {
-    crystal:    CRYSTALS[6],
+    stone:      'greenAventurine',
     leftStory:  'Green Aventurine shimmers with the rhythm of nature — a stone for new beginnings, abundance, and the quiet confidence that steady growth brings.',
     rightName:  'Green Aventurine',
     rightLine1: 'Luck  ·  Prosperity  ·  Growth',
@@ -85,7 +38,7 @@ const SHOWCASE = [
     cam:        [0.5, 5.6, 1.2],   // near top-down (bracelet shows as true circle)
   },
   {
-    crystal:    CRYSTALS[4],
+    stone:      'tigerEye',
     leftStory:  'Forged where ancient earth met golden light over millions of years, Tiger Eye holds dual energy — grounding you in the present while sharpening your will and vision.',
     rightName:  'Tiger Eye',
     rightLine1: 'Strength  ·  Confidence  ·  Focus',
@@ -95,277 +48,11 @@ const SHOWCASE = [
   },
 ];
 
-const N      = 28;
-const BR     = 1.1;   // bracelet radius
-const BEAD_R = 0.135; // bead radius
+const SHOWCASE_STONES = SHOWCASE.map((s) => s.stone);
 
-/* ── Phase map  (8 phases, 580 vh scroll) ────────────────────── */
-// 0.00-0.06 fall | 0.06-0.27 form | 0.27-0.42 360°-intro |
-// 0.42-0.54 RQ  | 0.54-0.66 AM   | 0.66-0.78 GA          |
-// 0.78-0.89 TE  | 0.89-1.00 CTA
-
-function getPhase(p) {
-  if (p < 0.06) return 0;
-  if (p < 0.27) return 1;
-  if (p < 0.42) return 2;
-  if (p < 0.54) return 3;
-  if (p < 0.66) return 4;
-  if (p < 0.78) return 5;
-  if (p < 0.89) return 6;
-  return 7;
-}
-
-function getShowcaseIdx(ph) {
-  if (ph === 3) return 0;
-  if (ph === 4) return 1;
-  if (ph === 5) return 2;
-  if (ph === 6) return 3;
-  return -1;
-}
-
-const CAM = {
-  fall:  [0,   1.2, 5.5],
-  form:  [0,   2.5, 4.8],
-  rot:   [0,   3.6, 3.2],   // 360° intro
-  rq:    [0.2, 3.8, 3.2],   // top-front
-  am:    [4.2, 2.2, 2.5],   // right side
-  ga:    [0.5, 5.6, 1.2],   // near top-down — bracelet reads as circle
-  te:    [-4.2,2.2, 2.5],   // left side
-  cta:   [0,   1.2, 4.2],   // eye-level intimate product shot
-};
-
-const lerp    = (a,b,t) => a + (b-a)*t;
-const clamp   = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
-const easeIO  = t => t < .5 ? 2*t*t : -1+(4-2*t)*t;
-
-/* ── Scene setup ──────────────────────────────────────────────── */
-function SceneSetup() {
-  const { gl, scene } = useThree();
-  useEffect(() => {
-    try {
-      gl.toneMapping         = THREE.ACESFilmicToneMapping;
-      gl.toneMappingExposure = 0.92;
-      if (scene.environmentIntensity !== undefined) scene.environmentIntensity = 0.50;
-    } catch(e) { /* ignore renderer setup errors */ }
-  }, [gl, scene]);
-  return <color attach="background" args={['#F4E4D1']} />;
-}
-
-/* ── Crystal bead — true circle, material lerp for showcase ──── */
-function CrystalBead({ bIdx, crystal, scatterRef, progressRef, showcaseRef }) {
-  const meshRef = useRef();
-  const tmpC    = useRef(new THREE.Color());
-  const tmpE    = useRef(new THREE.Color());
-  const angle   = (bIdx / N) * Math.PI * 2;
-  // TRUE CIRCLE — full BR for both X and Z
-  const tgtX    = Math.cos(angle) * BR;
-  const tgtZ    = Math.sin(angle) * BR;
-  const geo     = useMemo(() => new THREE.SphereGeometry(BEAD_R, 28, 20), []);
-
-  useFrame((state) => { try {
-    if (!meshRef.current) return;
-    const p  = progressRef.current;
-    const s  = scatterRef.current[bIdx];
-    const cv = easeIO(clamp((p - 0.06) / 0.21, 0, 1)); // done by p=0.27
-    const del = (bIdx / N) * 0.12;
-    const bc  = easeIO(clamp((cv - del) / (1 - del + 0.001), 0, 1));
-
-    // Reset on scroll-back
-    if (cv < 0.005 && s.settled) {
-      s.settled = false;
-      s.y  = 2.8 + Math.random()*2.5;
-      s.vy = 0;
-      s.vx = (Math.random()-0.5)*0.04;
-    }
-
-    if (cv < 0.01) {
-      if (!s.settled) {
-        s.vy -= 0.004; s.vx *= 0.991;
-        s.x  += s.vx;  s.y  += s.vy;
-        if (s.y <= s.ry) {
-          s.y   = s.ry;
-          s.vy  = -s.vy * 0.32;
-          s.vx *= 0.80;
-          s.vx += (Math.random()-0.5)*0.055;
-          if (Math.abs(s.vy) < 0.012) { s.settled = true; s.vy = 0; }
-        }
-      }
-      meshRef.current.position.set(s.x, s.y, s.z);
-      meshRef.current.rotation.x += 0.018;
-      meshRef.current.rotation.z += 0.012;
-    } else {
-      const t = state.clock.getElapsedTime();
-      const flt = cv > 0.88 ? Math.sin(t + bIdx * 0.62) * 0.012 : 0;
-      meshRef.current.position.set(
-        lerp(s.x, tgtX, bc),
-        lerp(s.y, 0,    bc) + flt,
-        lerp(s.z, tgtZ, bc)
-      );
-    }
-
-    // Smooth colour transition for showcase phases
-    const si = showcaseRef.current;
-    const tc = si >= 0 ? SHOWCASE[si].crystal : crystal;
-    const mat = meshRef.current.material;
-    if (mat) {
-      mat.color.lerp(tmpC.current.set(tc.color), 0.07);
-      mat.emissive.lerp(tmpE.current.set(tc.emissive), 0.07);
-      mat.emissiveIntensity = lerp(mat.emissiveIntensity, tc.ei ?? 0.5, 0.07);
-      mat.transmission      = lerp(mat.transmission ?? 0, tc.tx ?? 0.85, 0.05);
-    }
-  } catch(e) { /* ignore frame errors */ } });
-
-  return (
-    <mesh ref={meshRef} geometry={geo} castShadow>
-      <meshPhysicalMaterial
-        color={crystal.color}
-        emissive={crystal.emissive}
-        emissiveIntensity={crystal.ei ?? 0.3}
-        transmission={crystal.tx ?? 0.85}
-        thickness={crystal.tk ?? 0.7}
-        roughness={crystal.rg ?? 0.05}
-        metalness={crystal.mn ?? 0}
-        ior={crystal.ior ?? 1.65}
-        clearcoat={crystal.cc ?? 1}
-        clearcoatRoughness={crystal.cr ?? 0.03}
-        attenuationColor={crystal.ac ?? crystal.color}
-        attenuationDistance={crystal.ad ?? 0.3}
-        sheen={crystal.sh ?? 0}
-        sheenColor={crystal.shc ?? '#ffffff'}
-        sheenRoughness={crystal.shr ?? 0.5}
-        envMapIntensity={3.2}
-      />
-    </mesh>
-  );
-}
-
-/* ── Gold cord — true circle ──────────────────────────────────── */
-function GoldCord({ progressRef }) {
-  const meshRef = useRef();
-  const geo = useMemo(() => {
-    const pts = Array.from({ length: N+1 }, (_, i) => {
-      const a = (i / N) * Math.PI * 2;
-      return new THREE.Vector3(Math.cos(a)*BR, 0, Math.sin(a)*BR); // true circle
-    });
-    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 128, 0.016, 8, true);
-  }, []);
-
-  useFrame(() => {
-    try {
-      if (!meshRef.current) return;
-      const cv = easeIO(clamp((progressRef.current - 0.06) / 0.21, 0, 1));
-      meshRef.current.visible  = cv > 0.55;
-      meshRef.current.material.opacity = easeIO(clamp((cv - 0.55) / 0.25, 0, 1));
-    } catch(e) { /* ignore */ }
-  });
-
-  return (
-    <mesh ref={meshRef} geometry={geo}>
-      <meshPhysicalMaterial
-        color="#D4AF37" emissive="#7A5500" emissiveIntensity={0.6}
-        metalness={0.97} roughness={0.04}
-        clearcoat={1} clearcoatRoughness={0.03}
-        envMapIntensity={2.8}
-        transparent opacity={0}
-      />
-    </mesh>
-  );
-}
-
-/* ── Bracelet group — auto-rotation starts at phase 2 ─────────── */
-function BraceletGroup({ progressRef, showcaseRef }) {
-  const groupRef = useRef();
-  const autoRot  = useRef(0);
-  const scatter  = useRef(
-    Array.from({ length: N }, () => ({
-      x:(Math.random()-0.5)*6, y:2.8+Math.random()*2.8,
-      z:(Math.random()-0.5)*6, vx:(Math.random()-0.5)*0.04,
-      vy:0, ry:-1.8+Math.random()*0.9, settled:false,
-    }))
-  );
-
-  useFrame((_, delta) => { try {
-    if (!groupRef.current) return;
-    const p = progressRef.current;
-    if (p >= 0.27) autoRot.current += delta * 0.50;
-    const rotEase = easeIO(clamp((p - 0.27) / 0.10, 0, 1));
-    groupRef.current.rotation.y = autoRot.current * rotEase;
-  } catch(e) { /* ignore */ } });
-
-  return (
-    <group ref={groupRef}>
-      {Array.from({ length: N }, (_, i) => (
-        <CrystalBead key={i} bIdx={i}
-          crystal={CRYSTALS[i % CRYSTALS.length]}
-          scatterRef={scatter}
-          progressRef={progressRef}
-          showcaseRef={showcaseRef}
-        />
-      ))}
-      <GoldCord progressRef={progressRef} />
-    </group>
-  );
-}
-
-/* ── Camera — moves to different angles per phase ─────────────── */
-function CameraRig({ progressRef }) {
-  const lookAt = useRef(new THREE.Vector3(0, 0, 0));
-  useFrame((state) => { try {
-    const p  = progressRef.current;
-    const ph = getPhase(p);
-
-    let pos;
-    if      (ph === 0) pos = CAM.fall;
-    else if (ph === 1) {
-      const t = clamp((p - 0.06) / 0.21, 0, 1);
-      pos = [
-        lerp(CAM.fall[0], CAM.form[0], easeIO(t)),
-        lerp(CAM.fall[1], CAM.form[1], easeIO(t)),
-        lerp(CAM.fall[2], CAM.form[2], easeIO(t)),
-      ];
-    }
-    else if (ph === 2) pos = CAM.rot;
-    else if (ph === 3) pos = CAM.rq;
-    else if (ph === 4) pos = CAM.am;
-    else if (ph === 5) pos = CAM.ga;
-    else if (ph === 6) pos = CAM.te;
-    else               pos = CAM.cta;
-
-    state.camera.position.lerp(new THREE.Vector3(...pos), 0.028);
-    state.camera.lookAt(lookAt.current);
-  } catch(e) { /* ignore */ } });
-  return null;
-}
-
-/* ── Full scene ───────────────────────────────────────────────── */
-function Scene({ progressRef, showcaseRef }) {
-  return (
-    <>
-      <SceneSetup />
-      <Suspense fallback={null}>
-        <Environment files={studioHdr} background={false} />
-      </Suspense>
-
-      {/* Cinematic lighting — 6 lights (down from 11) */}
-      <ambientLight intensity={0.12} color="#FFF8F0" />
-      {/* Warm key */}
-      <directionalLight position={[-3, 7, 4]}  intensity={3.5} color="#FFF8E2" castShadow
-        shadow-mapSize={[512,512]} shadow-bias={-0.001} />
-      {/* Cool fill */}
-      <directionalLight position={[4, 2, -2]}  intensity={0.6} color="#A0B4FF" />
-      {/* Gold rim */}
-      <pointLight position={[0, 6, -5]}  intensity={8}   color="#C9A84C" distance={14} />
-      {/* Overhead jewelry spot */}
-      <spotLight position={[0, 5, 2]} intensity={28} color="#FFFAF5"
-        angle={0.22} penumbra={0.65} castShadow={false} />
-      {/* Warm side fill */}
-      <pointLight position={[1.5, 2, 2.5]}  intensity={6} color="#FFE8C0" distance={6} />
-
-      <BraceletGroup progressRef={progressRef} showcaseRef={showcaseRef} />
-      <CameraRig progressRef={progressRef} />
-    </>
-  );
-}
+// Render sharper on high-density screens; PerformanceMonitor drops to 1x on slow GPUs
+const MAX_DPR = 1.75;
+const initialDpr = () => Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, MAX_DPR);
 
 /* ── Main export ──────────────────────────────────────────────── */
 export function CrystalStorySection() {
@@ -374,6 +61,7 @@ export function CrystalStorySection() {
   const showcaseRef = useRef(-1);
   const [phase, setPhase] = useState(0);
   const [wordsUnlocked, setWordsUnlocked] = useState(0);
+  const [dpr, setDpr] = useState(initialDpr);
 
   const particles = useMemo(() => Array.from({ length: 22 }, () => ({
     left:     `${5 + Math.random()*88}%`,
@@ -418,10 +106,15 @@ export function CrystalStorySection() {
 
         {/* Canvas */}
         <div className="absolute inset-0">
-          <Canvas dpr={[1,1]} camera={{ position:[0,1.2,5.5], fov:46 }}
-                  gl={{ antialias:true, alpha:false }}>
+          <Canvas dpr={dpr} camera={{ position:[0,1.2,5.5], fov:46 }}
+                  gl={{ antialias:true, alpha:false, powerPreference:'high-performance' }}>
+            <PerformanceMonitor flipflops={3}
+              onDecline={() => setDpr(1)}
+              onIncline={() => setDpr(initialDpr())}
+              onFallback={() => setDpr(1)} />
             <Suspense fallback={null}>
-              <Scene progressRef={progressRef} showcaseRef={showcaseRef} />
+              <BraceletScene progressRef={progressRef} showcaseRef={showcaseRef}
+                             showcaseStones={SHOWCASE_STONES} />
             </Suspense>
           </Canvas>
         </div>
