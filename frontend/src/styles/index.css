@@ -3,6 +3,33 @@
 @tailwind utilities;
 
 @layer base {
+  /* shadcn/ui semantic tokens, mapped onto the Bhaktijyot palette
+     (cream #F4E4D1, ivory #FAF3EC, espresso #1C1209, forest #1D3D2C).
+     HSL triplets without hsl() so Tailwind can apply opacity (bg-muted/50).
+     All text pairings meet WCAG AA (≥ 5.3:1). */
+  :root {
+    --background: 33 61.4% 88.8%;
+    --foreground: 28 51.4% 7.3%;
+    --card: 30 58.3% 95.3%;
+    --card-foreground: 28 51.4% 7.3%;
+    --popover: 38 100% 98.4%;
+    --popover-foreground: 28 51.4% 7.3%;
+    --primary: 148 35.6% 17.6%;
+    --primary-foreground: 30 58.3% 95.3%;
+    --secondary: 36 47.8% 86.5%;
+    --secondary-foreground: 28 51.4% 7.3%;
+    --muted: 36 50% 87.5%;
+    --muted-foreground: 31 23% 34.1%;
+    --accent: 36 50.6% 82.5%;
+    --accent-foreground: 28 51.4% 7.3%;
+    --destructive: 4 76.5% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 36 46.7% 79.4%;
+    --input: 36 44.5% 73.1%;
+    --ring: 148 35.6% 17.6%;
+    --radius: 0.5rem;
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

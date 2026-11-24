@@ -1,5 +1,10 @@
+import tailwindcssAnimate from 'tailwindcss-animate';
+
 /** @type {import('tailwindcss').Config} */
 export default {
+  // Only an explicit `.dark` class enables dark styles — never the OS setting,
+  // so shadcn/registry components can't turn dark on a light-only site.
+  darkMode: ['class'],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -7,8 +12,23 @@ export default {
   theme: {
     extend: {
       colors: {
+        // ── shadcn/ui semantic tokens (values live in src/styles/index.css,
+        //    mapped onto the Bhaktijyot palette). Brand tokens below are unchanged.
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
+        destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
+        muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+        accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+        popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
+        card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+
         // ── PRIMARY ─ Deep forest green (logo circle backdrop)
         primary: {
+          foreground: 'hsl(var(--primary-foreground))', // text on primary (shadcn)
           DEFAULT: '#1D3D2C',
           dark:    '#152B1E',
           light:   '#2A5A40',
@@ -112,6 +132,9 @@ export default {
         'fade-up': 'fadeUp 0.6s ease-out',
         marquee:   'marquee 30s linear infinite',
         'marquee-reverse': 'marquee-reverse 30s linear infinite',
+        // shadcn/ui accordion
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
       },
 
       keyframes: {
@@ -131,8 +154,17 @@ export default {
           '0%':   { transform: 'translateX(-50%)' },
           '100%': { transform: 'translateX(0)' },
         },
+        'accordion-down': {
+          from: { height: '0' },
+          to:   { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to:   { height: '0' },
+        },
       },
     },
   },
-  plugins: [],
+  // Enter/exit animation utilities (animate-in, fade-in, slide-in-from-*) used by shadcn/ui
+  plugins: [tailwindcssAnimate],
 }
