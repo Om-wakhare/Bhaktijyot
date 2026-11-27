@@ -66,6 +66,17 @@ export function AdminSettingsPage() {
   const [igLoading, setIgLoading] = useState(false);
   const [igError, setIgError] = useState('');
   const [igResult, setIgResult] = useState(null); // { expiresInSeconds }
+  const [igStatus, setIgStatus] = useState(null); // { configured, source, expires_at }
+
+  const loadIgStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/instagram/status');
+      setIgStatus(res.data);
+    } catch {
+      setIgStatus(null); // status is informational only
+    }
+  }, []);
+  useEffect(() => { loadIgStatus(); }, [loadIgStatus]);
 
   const load = useCallback(async () => {
     const isCurrent = beginRequest();
@@ -166,11 +177,12 @@ export function AdminSettingsPage() {
     setIgResult(null);
     try {
       const res = await api.post('/instagram/refresh-token');
-      // Keep only the expiry; the token value is never stored or displayed here.
-      if (!res.data?.new_token) {
+      // The server saves the new token itself; only the expiry comes back.
+      if (!res.data?.refreshed) {
         setIgError('Instagram did not confirm the refresh. Please try again later.');
       } else {
         setIgResult({ expiresInSeconds: Number(res.data.expires_in_seconds) || null });
+        loadIgStatus();
       }
     } catch (err) {
       // 503 = not set up on the server, 502 = Instagram refused / unreachable
@@ -300,6 +312,15 @@ export function AdminSettingsPage() {
         subtitle="The reels on the home page come from Instagram through a connection that expires after about 60 days."
       >
         <div className="space-y-4">
+          {igStatus && (
+            <p className="text-sm font-medium text-espresso">
+              {igStatus.configured
+                ? `Connected${igStatus.expires_at
+                  ? ` · works until about ${new Date(igStatus.expires_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}`
+                  : ''}`
+                : 'Not connected yet'}
+            </p>
+          )}
           <p className="text-sm text-espresso/70">
             Press the button about once a month to keep the connection alive. If it has already expired,
             it can’t be refreshed here; ask your developer to reconnect Instagram.
@@ -315,7 +336,7 @@ export function AdminSettingsPage() {
               {igDays
                 ? `Instagram says the refreshed connection lasts about ${igDays} days${igExpiry ? ` (until about ${igExpiry})` : ''}. `
                 : ''}
-              Let your developer know you refreshed it today, so they can confirm it is saved on the server.
+              The new connection is saved on the server, so the reels keep working.
             </Alert>
           )}
         </div>
