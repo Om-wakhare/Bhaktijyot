@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { ImageUploader } from '../../components/admin/ImageUploader';
 import { StockField } from '../../components/admin/StockField';
+import { Model3DField } from '../../components/admin/Model3DField';
 import {
   Alert, Button, Card, Field, FileInput, Input, Page, Select, Textarea, Toggle,
 } from '../../components/admin/ui';
@@ -261,6 +262,25 @@ export function AdminAddProductPage() {
               onChange={({ tracked, count }) => {
                 setFieldErrors((prev) => ({ ...prev, stock: undefined }));
                 setForm((prev) => ({ ...prev, stock_tracked: tracked, stock: count }));
+              }}
+            />
+          </div>
+
+          <div className="pt-4 border-t border-espresso/8">
+            <div className="text-sm font-semibold text-espresso mb-1">360° 3D view</div>
+            <p className="text-xs text-espresso/60 mb-3">
+              A turning 3D preview on the product page, made from the product name and main photo.
+            </p>
+            <Model3DField
+              value={form.model_type}
+              onChange={(v) => setForm((p) => ({ ...p, model_type: v }))}
+              disabled={saving}
+              hasPhoto={imageFiles.length > 0}
+              draft={{
+                name: form.name,
+                slug: form.slug,
+                category: flatCats.find((c) => String(c.id) === String(form.category_id)) || null,
+                model_colors: null,
               }}
             />
           </div>

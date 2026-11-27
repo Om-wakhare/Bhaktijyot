@@ -28,6 +28,9 @@ const DEFAULTS = {
 
 const stone = (name, def) => ({ name, ...DEFAULTS, ...def });
 
+/** Build a stone definition outside the presets (e.g. from a product photo's colours). */
+export const defineStone = stone;
+
 export const STONES = {
   amethyst: stone('Amethyst', {
     colA: '#4A1A6C', colB: '#A67BD3', cloudCol: '#F1EAF7',

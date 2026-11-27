@@ -5,6 +5,7 @@ import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import { ImageUploader } from '../../components/admin/ImageUploader';
 import { StockField } from '../../components/admin/StockField';
+import { Model3DField } from '../../components/admin/Model3DField';
 import {
   Alert, Button, Card, ErrorState, Field, FileInput, Input, LoadingState, Page, Select, Textarea, Toggle, cn,
 } from '../../components/admin/ui';
@@ -55,6 +56,9 @@ export function AdminEditProductPage() {
   const [newImageFiles, setNewImageFiles] = useState([]);
   const [uploaderKey, setUploaderKey] = useState(0);
   const [uploadingImages, setUploadingImages] = useState(false);
+
+  // 360° 3D view (saved on its own, straight away)
+  const [saving3D, setSaving3D] = useState(false);
 
   // Video
   const [videoFile, setVideoFile] = useState(null);
@@ -117,6 +121,22 @@ export function AdminEditProductPage() {
   };
 
   // ── Save core fields ───────────────────────────────────────
+  const save3D = async (value) => {
+    const previous = form.model_type;
+    setForm((p) => ({ ...p, model_type: value }));
+    setSaving3D(true);
+    try {
+      const res = await api.put(`/products/${id}`, { model_type: value });
+      applyProduct(res.data);
+      toast.success('3D view saved');
+    } catch (err) {
+      setForm((p) => ({ ...p, model_type: previous }));
+      toast.error(getErrorMessage(err, 'Could not save the 3D view setting.'));
+    } finally {
+      setSaving3D(false);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -581,6 +601,25 @@ export function AdminEditProductPage() {
           ) : (
             <p className="text-xs text-espresso/60">Maximum {MAX_IMAGES} images reached. Delete one to upload more.</p>
           )}
+        </Card>
+
+        {/* 360° 3D view */}
+        <Card
+          title="360° 3D view"
+          subtitle="A turning 3D preview on the product page, made from the product name and main photo. Changes save straight away."
+        >
+          <Model3DField
+            value={form.model_type}
+            onChange={save3D}
+            disabled={saving3D}
+            hasPhoto={existingImages.length > 0}
+            draft={{
+              name: form.name,
+              slug: form.slug,
+              category: flatCats.find((c) => String(c.id) === String(form.category_id)) || null,
+              model_colors: product.model_colors,
+            }}
+          />
         </Card>
 
         {/* Video */}

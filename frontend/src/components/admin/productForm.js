@@ -18,6 +18,7 @@ export const EMPTY_PRODUCT_FORM = {
   category_id: '',
   sort_order: '0',
   is_active: true,
+  model_type: 'auto', // 360° 3D preview shape; 'auto' = from the product name
 };
 
 export function formFromProduct(p) {
@@ -34,6 +35,7 @@ export function formFromProduct(p) {
     category_id: p.category_id != null ? String(p.category_id) : '',
     sort_order: p.sort_order != null ? String(p.sort_order) : '0',
     is_active: p.is_active ?? true,
+    model_type: p.model_type || 'auto',
   };
 }
 
@@ -76,6 +78,7 @@ export function productPayload(form) {
     category_id: form.category_id ? Number(form.category_id) : null,
     sort_order: blank(form.sort_order) ? 0 : Number(form.sort_order),
     is_active: Boolean(form.is_active),
+    model_type: form.model_type || 'auto',
   };
 }
 

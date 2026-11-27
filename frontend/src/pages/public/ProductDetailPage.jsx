@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useId } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Maximize2, Box } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import {
@@ -16,6 +16,8 @@ import { WishlistButton } from '../../components/ui/WishlistButton';
 import { ProductCard } from '../../components/ui/ProductCard';
 import { WhatsAppIcon } from '../../components/ui/WhatsAppIcon';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { resolveModel, canRender3D } from '../../components/product3d/modelSpec';
+import { Product3DNote, Product3DView } from '../../components/product3d/Product3DView';
 
 /* stock: -1 = unlimited / not tracked, 0 = out of stock, 1+ = units left (backend rule) */
 function StockBadge({ stock }) {
@@ -366,8 +368,23 @@ function ImageGallery({ product }) {
   const active = allImages[safeIdx];
   const count = allImages.length;
 
+  // 360° 3D preview: shape from the name/category (or the admin's choice),
+  // colours from the stone name or the main photo. Only offered where WebGL works.
+  const spec = useMemo(() => resolveModel(product), [product]);
+  const has3D = spec.type !== 'none' && canRender3D();
+  const [show3D, setShow3D] = useState(false);
+
+  const frame3D = (
+    <div className="space-y-2">
+      <div className="relative w-full md:max-w-[calc(100vh_-_14rem)] mx-auto aspect-square overflow-hidden rounded-2xl border border-gold/25">
+        <Product3DView spec={spec} label={product.name} />
+      </div>
+      <Product3DNote className="text-center md:max-w-[calc(100vh_-_14rem)] mx-auto" />
+    </div>
+  );
+
   if (count === 0) {
-    return (
+    return has3D ? frame3D : (
       <div className="w-full aspect-square rounded-2xl flex items-center justify-center text-sm text-espresso/70 bg-ivory border border-gold/25">
         No image available
       </div>
@@ -387,11 +404,13 @@ function ImageGallery({ product }) {
   return (
     <>
       <div className="space-y-3">
-        {/* Main image — fills its square frame (uploads are stored as 1000×1000 squares).
-            Capped to the viewport height on md+ so the sticky gallery always fits. */}
+        {show3D ? frame3D : (
+        /* Main image — fills its square frame (uploads are stored as 1000×1000 squares).
+           Capped to the viewport height on md+ so the sticky gallery always fits. */
+        <div className="relative w-full md:max-w-[calc(100vh_-_14rem)] mx-auto">
         <button
           type="button"
-          className="group relative block w-full md:max-w-[calc(100vh_-_14rem)] mx-auto aspect-square overflow-hidden rounded-2xl border border-gold/25 bg-white cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-cream"
+          className="group relative block w-full aspect-square overflow-hidden rounded-2xl border border-gold/25 bg-white cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-cream"
           onClick={() => setLightboxOpen(true)}
           aria-label={`View ${product.name} image ${safeIdx + 1} of ${count} full screen`}
         >
@@ -407,23 +426,49 @@ function ImageGallery({ product }) {
             <Maximize2 className="h-3 w-3" /> View full
           </span>
         </button>
+        {has3D && (
+          <button
+            type="button"
+            onClick={() => setShow3D(true)}
+            className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-espresso shadow-sm ring-1 ring-gold/40 transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <Box className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+            360° 3D view
+          </button>
+        )}
+        </div>
+        )}
 
-        {count > 1 && (
+        {(count > 1 || has3D) && (
           <div className="flex gap-2 overflow-x-auto pb-1 md:justify-center">
             {allImages.map((img, idx) => (
               <button
                 key={img.id ?? idx}
                 type="button"
-                onClick={() => setActiveIdx(idx)}
+                onClick={() => { setActiveIdx(idx); setShow3D(false); }}
                 aria-label={`Show image ${idx + 1} of ${count}`}
-                aria-pressed={idx === safeIdx}
+                aria-pressed={!show3D && idx === safeIdx}
                 className={`shrink-0 h-16 w-16 overflow-hidden rounded-[10px] border-2 bg-white p-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                  idx === safeIdx ? 'border-gold' : 'border-espresso/15 hover:border-gold/60'
+                  !show3D && idx === safeIdx ? 'border-gold' : 'border-espresso/15 hover:border-gold/60'
                 }`}
               >
                 <img src={mediaUrl(img.image_path)} alt="" loading="lazy" className="block h-full w-full object-cover" />
               </button>
             ))}
+            {has3D && (
+              <button
+                type="button"
+                onClick={() => setShow3D(true)}
+                aria-label="Show the 360° 3D preview"
+                aria-pressed={show3D}
+                className={`shrink-0 h-16 w-16 flex flex-col items-center justify-center gap-0.5 rounded-[10px] border-2 bg-ivory text-espresso transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  show3D ? 'border-gold' : 'border-espresso/15 hover:border-gold/60'
+                }`}
+              >
+                <Box className="h-5 w-5 text-primary" aria-hidden="true" />
+                <span className="text-[10px] font-bold">360°</span>
+              </button>
+            )}
           </div>
         )}
       </div>

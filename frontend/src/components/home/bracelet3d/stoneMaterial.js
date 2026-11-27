@@ -162,7 +162,11 @@ function patchShader(shader, uniforms) {
 
 /** Create a bead material for a stone, with a per-bead random pattern seed. */
 export function createStoneMaterial(stoneKey, seed, jitter = [0, 0, 0]) {
-  const s = STONES[stoneKey];
+  return createStoneMaterialFromDef(STONES[stoneKey], seed, jitter);
+}
+
+/** Same, from a full stone definition (see defineStone in stones.js). */
+export function createStoneMaterialFromDef(s, seed, jitter = [0, 0, 0]) {
   const uniforms = {
     uColA: { value: new THREE.Color(s.colA) },
     uColB: { value: new THREE.Color(s.colB) },
