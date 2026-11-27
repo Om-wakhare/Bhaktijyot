@@ -68,6 +68,37 @@ def _reservation_sweep_loop() -> None:
             log.exception("Reservation sweep failed")
 
 
+def _backfill_palettes(limit: int = 2000) -> None:
+    """Compute the 3D-preview colours for product photos that don't have them."""
+    from app.db.session import SessionLocal
+    from app.models.product_image import ProductImage
+    from app.services.palette import palette_for_file
+    from app.services.storage import public_to_disk
+
+    db = SessionLocal()
+    try:
+        pending = (
+            db.query(ProductImage).filter(ProductImage.palette.is_(None)).limit(limit).all()
+        )
+        done = 0
+        for img in pending:
+            disk = public_to_disk(img.image_path)
+            if disk is None or not disk.is_file():
+                continue
+            palette = palette_for_file(disk)
+            if palette:
+                img.palette = palette
+                done += 1
+        if done:
+            db.commit()
+            log.info("Filled colour palettes for %d product photo(s)", done)
+    except Exception as exc:  # noqa: BLE001 — best effort, never break the app
+        db.rollback()
+        log.warning("Palette backfill skipped: %s", exc)
+    finally:
+        db.close()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.PROJECT_NAME, redirect_slashes=False)
 
@@ -83,6 +114,10 @@ def create_app() -> FastAPI:
             _sync_columns()
         except Exception as exc:
             log.error("DB startup error: %s", exc)
+
+        # Photos uploaded before 3D previews existed have no colour palette yet.
+        # Fill them in the background so startup (and /health) is never delayed.
+        threading.Thread(target=_backfill_palettes, name="palette-backfill", daemon=True).start()
 
         # Shout loudly if production runs with example secrets
         if settings.JWT_SECRET_KEY in INSECURE_JWT_SECRETS:

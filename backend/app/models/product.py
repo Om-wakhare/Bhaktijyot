@@ -38,6 +38,11 @@ class Product(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     image_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # 3D preview shape: None = pick automatically from name/category on the storefront,
+    # otherwise bracelet | mala | gemstone | crystal | raw | none (switched off)
+    model_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
     video_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     images: Mapped[List["ProductImage"]] = relationship(
@@ -59,3 +64,12 @@ class Product(Base):
         DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
 
+    @property
+    def model_colors(self) -> Optional[List[str]]:
+        """Dominant colours of the main photo (falls back to the first photo)."""
+        from app.services.palette import palette_from_str
+
+        imgs = list(self.images or [])
+        main = next((i for i in imgs if i.image_path == self.image_path), None)
+        main = main or (imgs[0] if imgs else None)
+        return palette_from_str(main.palette) if main else None
