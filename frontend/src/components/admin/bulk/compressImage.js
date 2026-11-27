@@ -88,3 +88,12 @@ export async function makeThumbnail(file, size = 192) {
     return URL.createObjectURL(file);
   }
 }
+
+/* ── 360° videos: uploaded as they are; the server converts them ── */
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+export const VIDEO_ACCEPT = 'video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov';
+
+export function isAcceptedVideo(file) {
+  if (/^video\/(mp4|webm|quicktime)$/i.test(file.type || '')) return true;
+  return /\.(mp4|webm|mov)$/i.test(file.name || '');
+}

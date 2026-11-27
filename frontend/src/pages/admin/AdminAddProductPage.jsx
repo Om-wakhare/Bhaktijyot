@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { ImageUploader } from '../../components/admin/ImageUploader';
 import { StockField } from '../../components/admin/StockField';
-import { Model3DField } from '../../components/admin/Model3DField';
 import {
   Alert, Button, Card, Field, FileInput, Input, Page, Select, Textarea, Toggle,
 } from '../../components/admin/ui';
@@ -267,31 +266,12 @@ export function AdminAddProductPage() {
           </div>
 
           <div className="pt-4 border-t border-espresso/8">
-            <div className="text-sm font-semibold text-espresso mb-1">360° 3D view</div>
-            <p className="text-xs text-espresso/60 mb-3">
-              A turning 3D preview on the product page, made from the product name and main photo.
-            </p>
-            <Model3DField
-              value={form.model_type}
-              onChange={(v) => setForm((p) => ({ ...p, model_type: v }))}
-              disabled={saving}
-              hasPhoto={imageFiles.length > 0}
-              draft={{
-                name: form.name,
-                slug: form.slug,
-                category: flatCats.find((c) => String(c.id) === String(form.category_id)) || null,
-                model_colors: null,
-              }}
-            />
-          </div>
-
-          <div className="pt-4 border-t border-espresso/8">
             <div className="text-sm font-semibold text-espresso mb-3">Media (optional)</div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Images (up to 4 — the first is the primary image)">
                 <ImageUploader existingCount={0} onFilesChange={setImageFiles} disabled={saving} />
               </Field>
-              <Field label="Video" error={videoError || undefined} hint="MP4, WebM or MOV · max 50 MB">
+              <Field label="360° video (optional)" error={videoError || undefined} hint="Put the product on a turntable (or turn it slowly by hand) and record one full turn: 8–15 seconds, phone held still, plain background. Shoppers drag it to turn the product. MP4, MOV or WebM · max 50 MB.">
                 <FileInput key={videoInputKey} accept={VIDEO_ACCEPT} onChange={onVideoChange} disabled={saving} />
                 {videoFile && (
                   <div className="mt-2 flex items-center gap-2 text-[11px] text-espresso/70">

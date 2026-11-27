@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowLeft, Box, CheckCircle2, Download, FileSpreadsheet, FolderOpen, ImagePlus,
+  AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Film, FolderOpen, ImagePlus,
   Loader2, RotateCcw, Star, X,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { Alert, Button, Card, Page, Pill, Select, cn } from '../../components/admin/ui';
 import { useToast } from '../../components/admin/Toast';
-import { formatINR } from '../../components/admin/adminUtils';
+import { formatBytes, formatINR } from '../../components/admin/adminUtils';
 import {
-  MAX_PHOTOS_PER_PRODUCT, folderOf, matchNewPhotos, matchPhotos,
+  MAX_PHOTOS_PER_PRODUCT, folderOf, matchNewPhotos, matchPhotos, matchVideos,
 } from '../../components/admin/bulk/photoMatch';
 import {
-  PHOTO_ACCEPT, compressImage, isAcceptedPhoto, isHeic, makeThumbnail,
+  MAX_VIDEO_BYTES, PHOTO_ACCEPT, VIDEO_ACCEPT, compressImage, isAcceptedPhoto, isAcceptedVideo, isHeic,
+  makeThumbnail,
 } from '../../components/admin/bulk/compressImage';
-import { MODEL_LABELS, resolveModel } from '../../components/product3d/modelSpec';
 
 const MAX_EXCEL_BYTES = 5 * 1024 * 1024;
 const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 const UPLOAD_WORKERS = 2;
+const EMPTY_PHOTO_MATCH = { assign: {}, unmatched: [] };
+const EMPTY_VIDEO_MATCH = { videoOf: {}, unmatched: [] };
 
 /* Files dropped from the desktop, including whole folders (keeps the folder name). */
 async function filesFromDrop(dataTransfer) {
@@ -67,7 +69,7 @@ function StepTitle({ n, children, done }) {
 export function AdminBulkUploadPage() {
   const toast = useToast();
   const excelInput = useRef(null);
-  const photoInput = useRef(null);
+  const mediaInput = useRef(null);
   const folderInput = useRef(null);
 
   const [downloading, setDownloading] = useState(false);
@@ -76,22 +78,25 @@ export function AdminBulkUploadPage() {
   const [excelError, setExcelError] = useState('');
   const [preview, setPreview] = useState(null); // dry-run result
 
-  const [photos, setPhotos] = useState([]); // { id, file, name, folder, thumb }
+  // Every dropped file: { id, kind: 'photo' | 'video', file, name, folder, thumb }
+  const [files, setFiles] = useState([]);
   const [skippedFiles, setSkippedFiles] = useState([]);
-  const [match, setMatch] = useState({ assign: {}, unmatched: [] });
+  const [match, setMatch] = useState(EMPTY_PHOTO_MATCH);   // photos: row -> [ids]
+  const [vmatch, setVmatch] = useState(EMPTY_VIDEO_MATCH); // videos: row -> id
   const [dragging, setDragging] = useState(false);
 
   const [phase, setPhase] = useState('edit'); // edit | creating | uploading | done
-  const [created, setCreated] = useState([]); // created_items
+  const [created, setCreated] = useState([]);
   const [progress, setProgress] = useState({}); // row -> { state, error, mediaDone }
   const [createError, setCreateError] = useState('');
 
   const okRows = useMemo(() => (preview?.rows || []).filter((r) => !r.error), [preview]);
   const badRows = useMemo(() => (preview?.rows || []).filter((r) => r.error), [preview]);
-  const photoById = useMemo(() => Object.fromEntries(photos.map((p) => [p.id, p])), [photos]);
+  const fileById = useMemo(() => Object.fromEntries(files.map((f) => [f.id, f])), [files]);
+  const photoCount = files.filter((f) => f.kind === 'photo').length;
+  const videoCount = files.length - photoCount;
   const thumbsRef = useRef([]);
 
-  // Free preview images when leaving the page
   useEffect(() => () => thumbsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
   // Warn before closing the tab while products are being created
@@ -143,7 +148,8 @@ export function AdminBulkUploadPage() {
       const res = await api.post('/products/bulk-upload', fd, { ...MULTIPART, params: { dry_run: true } });
       setPreview(res.data);
       const rows = (res.data.rows || []).filter((r) => !r.error);
-      setMatch(matchPhotos(rows, photos));
+      setMatch(matchPhotos(rows, files.filter((f) => f.kind === 'photo')));
+      setVmatch(matchVideos(rows, files.filter((f) => f.kind === 'video')));
       if (!rows.length) setExcelError('No products could be read from this sheet. See the problems listed below.');
     } catch (err) {
       setExcelError(getErrorMessage(err, 'Could not read the Excel file.'));
@@ -152,43 +158,54 @@ export function AdminBulkUploadPage() {
     }
   };
 
-  // ── Step 3: photos ─────────────────────────────────────────
-  const addPhotos = useCallback(async (entries) => {
-    const known = new Set(photos.map((p) => p.id));
+  // ── Step 3: photos and 360° videos ─────────────────────────
+  const addFiles = useCallback(async (entries) => {
+    const known = new Set(files.map((f) => f.id));
     const skipped = [];
     const fresh = [];
     entries.forEach(({ file, relPath }) => {
-      if (isHeic(file)) { skipped.push(`${file.name} (iPhone HEIC: set Camera → Formats → Most Compatible, or export as JPEG)`); return; }
-      if (!isAcceptedPhoto(file)) { if (!/^\./.test(file.name)) skipped.push(`${file.name} (not a JPG, PNG or WebP photo)`); return; }
+      if (/^\./.test(file.name)) return; // hidden system files inside folders
+      let kind = null;
+      if (isHeic(file)) {
+        skipped.push(`${file.name} (iPhone HEIC photo: set Camera → Formats → Most Compatible, or export as JPEG)`);
+      } else if (isAcceptedPhoto(file)) kind = 'photo';
+      else if (isAcceptedVideo(file)) {
+        if (file.size > MAX_VIDEO_BYTES) skipped.push(`${file.name} (video larger than 50 MB: trim it to one turn, 8–15 seconds)`);
+        else kind = 'video';
+      } else skipped.push(`${file.name} (not a photo or MP4/MOV/WebM video)`);
+      if (!kind) return;
       const id = fileId(file);
       if (known.has(id)) return;
       known.add(id);
-      fresh.push({ id, file, name: file.name, folder: folderOf(file, relPath), thumb: null });
+      fresh.push({ id, kind, file, name: file.name, folder: folderOf(file, relPath), thumb: null });
     });
     setSkippedFiles((prev) => [...prev, ...skipped]);
     if (!fresh.length) return;
-    setPhotos((prev) => [...prev, ...fresh]);
-    setMatch((cur) => matchNewPhotos(okRows, fresh, cur));
-    // Thumbnails load in the background, a few at a time
-    for (const p of fresh) {
+    setFiles((prev) => [...prev, ...fresh]);
+    const freshPhotos = fresh.filter((f) => f.kind === 'photo');
+    const freshVideos = fresh.filter((f) => f.kind === 'video');
+    if (freshPhotos.length) setMatch((cur) => matchNewPhotos(okRows, freshPhotos, cur));
+    if (freshVideos.length) setVmatch((cur) => matchVideos(okRows, freshVideos, cur));
+    // Photo previews load in the background, one at a time
+    for (const p of freshPhotos) {
       // eslint-disable-next-line no-await-in-loop
       const thumb = await makeThumbnail(p.file);
       thumbsRef.current.push(thumb);
-      setPhotos((prev) => prev.map((x) => (x.id === p.id ? { ...x, thumb } : x)));
+      setFiles((prev) => prev.map((x) => (x.id === p.id ? { ...x, thumb } : x)));
     }
-  }, [photos, okRows]);
+  }, [files, okRows]);
 
-  const onPickPhotos = (e) => {
-    const files = Array.from(e.target.files || []);
+  const onPickFiles = (e) => {
+    const picked = Array.from(e.target.files || []);
     e.target.value = '';
-    addPhotos(files.map((file) => ({ file, relPath: file.webkitRelativePath || '' })));
+    addFiles(picked.map((file) => ({ file, relPath: file.webkitRelativePath || '' })));
   };
 
   const onDrop = async (e) => {
     e.preventDefault();
     setDragging(false);
     if (phase !== 'edit') return;
-    addPhotos(await filesFromDrop(e.dataTransfer));
+    addFiles(await filesFromDrop(e.dataTransfer));
   };
 
   const assignPhoto = (photoId, row) => {
@@ -201,6 +218,19 @@ export function AdminBulkUploadPage() {
     });
   };
 
+  const assignVideo = (videoId, row) => {
+    setVmatch((cur) => {
+      const videoOf = Object.fromEntries(Object.entries(cur.videoOf).filter(([, id]) => id !== videoId));
+      let unmatched = cur.unmatched.filter((x) => x !== videoId);
+      if (row === '') unmatched = [...unmatched, videoId];
+      else {
+        if (videoOf[row] != null) unmatched = [...unmatched, videoOf[row]]; // one video per product
+        videoOf[row] = videoId;
+      }
+      return { videoOf, unmatched };
+    });
+  };
+
   const makeMain = (row, photoId) => {
     setMatch((cur) => ({
       ...cur,
@@ -208,23 +238,28 @@ export function AdminBulkUploadPage() {
     }));
   };
 
-  // ── Step 4: create products, then upload photos ────────────
-  const rowsWithPhotos = okRows.filter((r) => (match.assign[r.row] || []).length > 0);
-  const overLimit = okRows.filter((r) => (match.assign[r.row] || []).length > MAX_PHOTOS_PER_PRODUCT);
+  // ── Step 4: create products, then upload their media ───────
+  const photosOf = (row) => match.assign[row] || [];
+  const videoOf = (row) => vmatch.videoOf[row] ?? null;
+  const rowsWithMedia = okRows.filter((r) => photosOf(r.row).length > 0 || videoOf(r.row) != null);
+  const overLimit = okRows.filter((r) => photosOf(r.row).length > MAX_PHOTOS_PER_PRODUCT);
+  const unmatchedIds = [...match.unmatched, ...vmatch.unmatched];
 
   const uploadOne = async (item) => {
-    const ids = (match.assign[item.row] || []).slice(0, MAX_PHOTOS_PER_PRODUCT);
+    const photoIds = photosOf(item.row).slice(0, MAX_PHOTOS_PER_PRODUCT);
+    const vid = videoOf(item.row);
     setProgress((p) => ({ ...p, [item.row]: { ...p[item.row], state: 'uploading', error: '' } }));
     try {
       let mediaDone = progress[item.row]?.mediaDone;
-      if (ids.length && !mediaDone) {
+      if ((photoIds.length || vid != null) && !mediaDone) {
         const fd = new FormData();
-        for (const id of ids) {
+        for (const id of photoIds) {
           // eslint-disable-next-line no-await-in-loop
-          const small = await compressImage(photoById[id].file);
+          const small = await compressImage(fileById[id].file);
           fd.append('images', small, small.name);
         }
-        await api.post(`/products/${item.id}/media`, fd, MULTIPART);
+        if (vid != null) fd.append('video', fileById[vid].file, fileById[vid].name);
+        await api.post(`/products/${item.id}/media`, fd, { ...MULTIPART, timeout: 5 * 60 * 1000 });
         mediaDone = true;
         setProgress((p) => ({ ...p, [item.row]: { ...p[item.row], mediaDone: true } }));
       }
@@ -256,11 +291,12 @@ export function AdminBulkUploadPage() {
     try {
       const fd = new FormData();
       fd.append('file', excelFile);
-      fd.append('hold_rows', JSON.stringify(rowsWithPhotos.map((r) => r.row)));
+      fd.append('hold_rows', JSON.stringify(rowsWithMedia.map((r) => r.row)));
       const res = await api.post('/products/bulk-upload', fd, MULTIPART);
       const items = res.data.created_items || [];
       setCreated(items);
-      const needsWork = items.filter((it) => (match.assign[it.row] || []).length > 0 || it.publish_after_photos);
+      const hasMedia = (it) => photosOf(it.row).length > 0 || videoOf(it.row) != null;
+      const needsWork = items.filter((it) => hasMedia(it) || it.publish_after_photos);
       setProgress(Object.fromEntries(items.map((it) => [
         it.row, { state: needsWork.includes(it) ? 'waiting' : 'done', error: '', mediaDone: false },
       ])));
@@ -283,18 +319,20 @@ export function AdminBulkUploadPage() {
     thumbsRef.current.forEach((u) => URL.revokeObjectURL(u));
     thumbsRef.current = [];
     setExcelFile(null); setPreview(null); setExcelError('');
-    setPhotos([]); setSkippedFiles([]); setMatch({ assign: {}, unmatched: [] });
+    setFiles([]); setSkippedFiles([]); setMatch(EMPTY_PHOTO_MATCH); setVmatch(EMPTY_VIDEO_MATCH);
     setCreated([]); setProgress({}); setCreateError(''); setPhase('edit');
   };
 
   const locked = phase !== 'edit';
   const doneCount = Object.values(progress).filter((p) => p.state === 'done').length;
   const failed = created.filter((it) => progress[it.row]?.state === 'failed');
+  const withVideo = okRows.filter((r) => videoOf(r.row) != null).length;
+  const matchedCount = files.length - unmatchedIds.length;
 
   return (
     <Page
       title="Bulk upload"
-      description="Add many products at once from an Excel sheet, with their photos."
+      description="Add many products at once from an Excel sheet, with their photos and 360° videos."
       actions={<Button size="sm" variant="outline" to="/admin/products"><ArrowLeft className="h-4 w-4" /> Products</Button>}
     >
       {phase === 'edit' && (
@@ -302,9 +340,9 @@ export function AdminBulkUploadPage() {
           <Card title={<StepTitle n={1}>Get the Excel template</StepTitle>}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-espresso/75 max-w-2xl">
-                One row per product. The template has dropdowns for category, status and 3D shape, and a
-                “How to” sheet. Name photo files after the product (e.g. <em>Rose Quartz Bracelet 1.jpg</em>) and they
-                are matched automatically.
+                One row per product, with dropdowns for category and status and a “How to” sheet. Name files after
+                the product and they are matched automatically: photos like <em>Rose Quartz Bracelet 1.jpg</em>, and
+                one turntable video like <em>Rose Quartz Bracelet.mp4</em> for the 360° view.
               </p>
               <Button variant="outline" onClick={downloadTemplate} disabled={downloading} className="shrink-0">
                 <Download className="h-4 w-4" /> {downloading ? 'Downloading…' : 'Download template'}
@@ -351,11 +389,18 @@ export function AdminBulkUploadPage() {
 
           {okRows.length > 0 && (
             <Card
-              title={<StepTitle n={3} done={photos.length > 0}>Add the product photos</StepTitle>}
-              subtitle={`Up to ${MAX_PHOTOS_PER_PRODUCT} per product; the first one is the main photo. Photos are shrunk before uploading, so it's quick even on mobile data.`}
+              title={<StepTitle n={3} done={files.length > 0}>Add photos and 360° videos</StepTitle>}
+              subtitle={`Up to ${MAX_PHOTOS_PER_PRODUCT} photos per product (the first is the main photo) and one turntable video (one full turn, 8–15 s, max 50 MB). Photos are shrunk before uploading; videos are converted on the server for smooth turning.`}
             >
-              <input ref={photoInput} type="file" multiple accept={PHOTO_ACCEPT} className="sr-only" onChange={onPickPhotos} />
-              <input ref={folderInput} type="file" multiple webkitdirectory="" directory="" className="sr-only" onChange={onPickPhotos} />
+              <input
+                ref={mediaInput}
+                type="file"
+                multiple
+                accept={`${PHOTO_ACCEPT},${VIDEO_ACCEPT}`}
+                className="sr-only"
+                onChange={onPickFiles}
+              />
+              <input ref={folderInput} type="file" multiple webkitdirectory="" directory="" className="sr-only" onChange={onPickFiles} />
               <div
                 onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
@@ -367,17 +412,18 @@ export function AdminBulkUploadPage() {
               >
                 <ImagePlus className="h-8 w-8 text-espresso/50" aria-hidden="true" />
                 <p className="text-sm text-espresso/80">
-                  <span className="hidden sm:inline">Drag photos or folders here, or </span>choose them from your device.
+                  <span className="hidden sm:inline">Drag photos, videos or folders here, or </span>choose them from your device.
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
-                  <Button onClick={() => photoInput.current?.click()}><ImagePlus className="h-4 w-4" /> Choose photos</Button>
+                  <Button onClick={() => mediaInput.current?.click()}><ImagePlus className="h-4 w-4" /> Choose photos &amp; videos</Button>
                   <Button variant="outline" onClick={() => folderInput.current?.click()} className="hidden sm:inline-flex">
                     <FolderOpen className="h-4 w-4" /> Choose a folder
                   </Button>
                 </div>
-                {photos.length > 0 && (
+                {files.length > 0 && (
                   <p className="text-xs text-espresso/70">
-                    {photos.length} photo{photos.length === 1 ? '' : 's'} added · {photos.length - match.unmatched.length} matched
+                    {photoCount} photo{photoCount === 1 ? '' : 's'}
+                    {videoCount > 0 && ` · ${videoCount} video${videoCount === 1 ? '' : 's'}`} added · {matchedCount} matched
                   </p>
                 )}
               </div>
@@ -387,22 +433,28 @@ export function AdminBulkUploadPage() {
                 </Alert>
               )}
 
-              {match.unmatched.length > 0 && (
+              {unmatchedIds.length > 0 && (
                 <div className="mt-4">
                   <h3 className="text-sm font-semibold text-espresso">
-                    Photos we couldn&apos;t match ({match.unmatched.length})
+                    Files we couldn&apos;t match ({unmatchedIds.length})
                   </h3>
                   <p className="text-xs text-espresso/70 mb-2">Pick the product for each one, or leave it out.</p>
                   <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-                    {match.unmatched.map((id) => {
-                      const p = photoById[id];
-                      if (!p) return null;
+                    {unmatchedIds.map((id) => {
+                      const f = fileById[id];
+                      if (!f) return null;
+                      const isVideo = f.kind === 'video';
                       return (
                         <li key={id} className="rounded-lg border border-espresso/10 bg-white p-2">
-                          <Thumb photo={p} />
-                          <p className="mt-1 truncate text-[11px] text-espresso/70" title={p.name}>{p.name}</p>
-                          <label className="sr-only" htmlFor={`assign-${id}`}>Product for {p.name}</label>
-                          <Select id={`assign-${id}`} value="" onChange={(e) => assignPhoto(id, e.target.value)} className="mt-1 py-1.5 text-xs">
+                          {isVideo ? <VideoTile file={f} /> : <Thumb photo={f} />}
+                          <p className="mt-1 truncate text-[11px] text-espresso/70" title={f.name}>{f.name}</p>
+                          <label className="sr-only" htmlFor={`assign-${id}`}>Product for {f.name}</label>
+                          <Select
+                            id={`assign-${id}`}
+                            value=""
+                            onChange={(e) => (isVideo ? assignVideo(id, e.target.value) : assignPhoto(id, e.target.value))}
+                            className="mt-1 py-1.5 text-xs"
+                          >
                             <option value="">Choose product…</option>
                             {okRows.map((r) => <option key={r.row} value={r.row}>{r.name}</option>)}
                           </Select>
@@ -418,16 +470,18 @@ export function AdminBulkUploadPage() {
           {okRows.length > 0 && (
             <Card
               title={<StepTitle n={4}>Check and create</StepTitle>}
-              subtitle="Nothing is saved until you press Create. Products with photos stay hidden until their photos finish uploading."
+              subtitle="Nothing is saved until you press Create. Products with photos or a video stay hidden until their files finish uploading."
             >
               <ul className="divide-y divide-espresso/8">
                 {okRows.map((r) => (
                   <ReviewRow
                     key={r.row}
                     row={r}
-                    ids={match.assign[r.row] || []}
-                    photoById={photoById}
+                    ids={photosOf(r.row)}
+                    video={videoOf(r.row) != null ? fileById[videoOf(r.row)] : null}
+                    fileById={fileById}
                     onRemove={(id) => assignPhoto(id, '')}
+                    onRemoveVideo={(id) => assignVideo(id, '')}
                     onMain={(id) => makeMain(r.row, id)}
                   />
                 ))}
@@ -441,8 +495,9 @@ export function AdminBulkUploadPage() {
               {createError && <Alert tone="error" className="mt-3">{createError}</Alert>}
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-espresso/75">
-                  {okRows.length} product{okRows.length === 1 ? '' : 's'} · {rowsWithPhotos.length} with photos
-                  {okRows.length - rowsWithPhotos.length > 0 && ` · ${okRows.length - rowsWithPhotos.length} without photos (you can add them later)`}
+                  {okRows.length} product{okRows.length === 1 ? '' : 's'}
+                  {' · '}{okRows.filter((r) => photosOf(r.row).length).length} with photos
+                  {withVideo > 0 && ` · ${withVideo} with a 360° video`}
                 </p>
                 <Button onClick={createAll} disabled={locked || !okRows.length}>
                   Create {okRows.length} product{okRows.length === 1 ? '' : 's'}
@@ -456,7 +511,7 @@ export function AdminBulkUploadPage() {
       {phase !== 'edit' && (
         <Card
           title={phase === 'done' ? (failed.length ? 'Finished, with some problems' : 'All done') : 'Creating products…'}
-          subtitle={phase === 'done' ? undefined : 'Please keep this page open until it finishes.'}
+          subtitle={phase === 'done' ? undefined : 'Please keep this page open until it finishes. Videos take a little longer.'}
         >
           {phase === 'creating' ? (
             <p className="inline-flex items-center gap-2 text-sm text-espresso/75">
@@ -483,7 +538,12 @@ export function AdminBulkUploadPage() {
               <ul className="divide-y divide-espresso/8" aria-live="polite">
                 {created.map((it) => {
                   const st = progress[it.row] || {};
-                  const nPhotos = Math.min((match.assign[it.row] || []).length, MAX_PHOTOS_PER_PRODUCT);
+                  const nPhotos = Math.min(photosOf(it.row).length, MAX_PHOTOS_PER_PRODUCT);
+                  const hasVideo = videoOf(it.row) != null;
+                  const media = [
+                    nPhotos ? `${nPhotos} photo${nPhotos === 1 ? '' : 's'}` : null,
+                    hasVideo ? '360° video' : null,
+                  ].filter(Boolean).join(' + ');
                   return (
                     <li key={it.id} className="flex flex-wrap items-center gap-3 py-2.5">
                       <span className="w-5 shrink-0" aria-hidden="true">
@@ -499,8 +559,10 @@ export function AdminBulkUploadPage() {
                           {st.state === 'failed'
                             ? st.error
                             : st.state === 'done'
-                              ? `${nPhotos ? `${nPhotos} photo${nPhotos === 1 ? '' : 's'} · ` : ''}${it.publish_after_photos || it.is_active ? 'Published' : 'Saved as draft'}`
-                              : st.state === 'uploading' ? 'Uploading photos…' : 'Waiting…'}
+                              ? `${media ? `${media} · ` : ''}${it.publish_after_photos || it.is_active ? 'Published' : 'Saved as draft'}`
+                              : st.state === 'uploading'
+                                ? (hasVideo ? 'Uploading and converting the video…' : 'Uploading photos…')
+                                : 'Waiting…'}
                         </span>
                       </span>
                       {st.state === 'failed' && phase === 'done' && (
@@ -523,8 +585,8 @@ export function AdminBulkUploadPage() {
               )}
               {phase === 'done' && failed.length > 0 && (
                 <Alert tone="warning" className="mt-3">
-                  Products whose photos didn&apos;t upload were kept as drafts, so customers don&apos;t see them half-finished.
-                  Press “Try again”, or add the photos from the product&apos;s Edit page.
+                  Products whose files didn&apos;t upload were kept as drafts, so customers don&apos;t see them half-finished.
+                  Press “Try again”, or add the files from the product&apos;s Edit page.
                 </Alert>
               )}
             </>
@@ -543,8 +605,16 @@ function Thumb({ photo, className }) {
   );
 }
 
-function ReviewRow({ row, ids, photoById, onRemove, onMain }) {
-  const spec = resolveModel({ name: row.name, slug: row.slug, category: row.category ? { name: row.category } : null, model_type: row.model_type });
+function VideoTile({ file, className }) {
+  return (
+    <span className={cn('flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-md bg-espresso/90 text-cream', className)}>
+      <Film className="h-6 w-6" aria-hidden="true" />
+      <span className="text-[10px] font-semibold">360° · {formatBytes(file.file.size)}</span>
+    </span>
+  );
+}
+
+function ReviewRow({ row, ids, video, fileById, onRemove, onRemoveVideo, onMain }) {
   return (
     <li className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start">
       <div className="min-w-0 sm:w-72 sm:shrink-0">
@@ -560,19 +630,19 @@ function ReviewRow({ row, ids, photoById, onRemove, onMain }) {
           <Pill className={row.status === 'draft' ? 'bg-espresso/5 text-espresso/75' : 'bg-primary-50 text-primary-dark'}>
             {row.status === 'draft' ? 'Draft' : 'Published'}
           </Pill>
-          <Pill className={spec.type === 'none' ? 'bg-espresso/5 text-espresso/70' : 'bg-gold-100 text-gold-800'}>
-            <Box className="mr-1 inline h-3 w-3" aria-hidden="true" />
-            {spec.type === 'none' ? 'No 3D view' : `3D: ${MODEL_LABELS[spec.type]}`}
+          <Pill className={video ? 'bg-gold-100 text-gold-800' : 'bg-espresso/5 text-espresso/70'}>
+            <Film className="mr-1 inline h-3 w-3" aria-hidden="true" />
+            {video ? '360° video' : 'No 360° video'}
           </Pill>
         </div>
       </div>
       <div className="flex-1">
-        {ids.length === 0 ? (
-          <p className="text-xs text-espresso/60">No photos matched.</p>
+        {ids.length === 0 && !video ? (
+          <p className="text-xs text-espresso/60">No photos or video matched.</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {ids.map((id, i) => {
-              const p = photoById[id];
+              const p = fileById[id];
               if (!p) return null;
               const extra = i >= MAX_PHOTOS_PER_PRODUCT;
               return (
@@ -595,6 +665,17 @@ function ReviewRow({ row, ids, photoById, onRemove, onMain }) {
                 </li>
               );
             })}
+            {video && (
+              <li className="relative w-20">
+                <VideoTile file={video} />
+                <div className="mt-1 flex items-center justify-between gap-1">
+                  <span className="truncate text-[10px] text-espresso/70" title={video.name}>{video.name}</span>
+                  <button type="button" onClick={() => onRemoveVideo(video.id)} className="shrink-0 rounded p-1 text-espresso/70 hover:text-red-700" aria-label={`Remove video ${video.name} from ${row.name}`} title="Remove">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </li>
+            )}
           </ul>
         )}
       </div>

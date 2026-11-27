@@ -156,17 +156,17 @@ The 21st.dev MCP lets Claude search and generate components from 21st.dev. It re
 - **Stock:** `-1` = unlimited / not tracked, `0` = out of stock, `1+` = units left. Never show "-1"; clamp quantities only when stock > 0.
 - **Errors:** show API errors with `getErrorMessage(err)` (422 `detail` is an array).
 
-## 360° 3D product preview (`src/components/product3d/`)
+## 360° view from a product video (`src/components/product360/Spin360Video.jsx`)
 
-| File | Role |
-|---|---|
-| `modelSpec.js` | Pure data, no three.js: `resolveModel(product)` picks the shape (admin `model_type` override → name → category) and the look (stone preset by name, gem colour, or the main photo's `model_colors`). Safe to import anywhere. |
-| `Product3DView.jsx` | Lazy wrapper with loading / not-supported / error states, plus `Product3DNote` (the "illustration" disclaimer; always show it with the viewer). |
-| `ProductModelViewer.jsx` | R3F canvas + light-panel studio (no HDR download). **GSAP drives the motion**: turntable speed, `Draggable` + `InertiaPlugin` drag-to-spin, arrow-key steps, intro. Pauses when off-screen; respects reduced motion. |
-| `models.jsx` | Procedural shapes: bead bracelet, mala (ridged rudraksha), brilliant/cabochon gem, crystal tower, raw stone/cluster. Reuses `home/bracelet3d` geometry + stone shader. |
+The owner records the product turning once on a turntable (8–15 s, phone still, plain background) and uploads it as the product's video. On the product page it appears as a "360°" thumbnail and a "360° view" pill.
 
-To add a shape: add a component to `MODEL_COMPONENTS` in `models.jsx`, a rule in `SHAPE_RULES` + a label in `modelSpec.js`, and the value to `MODEL_TYPES` in `backend/app/schemas/product.py`.
+- While untouched, the video loops (a smooth turn). **Dragging scrubs the video** with GSAP `Draggable` + `InertiaPlugin` (one turn ≈ 1.1× the viewer width; a flick coasts a little). Turn buttons and arrow keys step 1/8 turn; Space or the pause button stops the spin; it resumes 2.2 s after the last touch unless paused.
+- Seeks are coalesced (one in flight) so slower phones stay responsive; recordings that don't store their length are handled (seek-to-end trick).
+- Pauses when scrolled out of view; no autoplay with reduced motion.
+- **Server side** (`backend/app/services/video.py`): when FFmpeg is available (`imageio-ffmpeg` package or system `ffmpeg`), uploads are converted to H.264 MP4, no audio, 720 px, keyframe every 6 frames (smooth dragging), `+faststart`, plus a JPEG poster (`video_poster`). Without FFmpeg the file is kept as uploaded (iPhone HEVC may not play on Android/Chrome, and dragging is less smooth).
+
+The earlier procedural 3D product models were removed on 2026-11-27 at the owner's request (the home-page crystal bracelet in `home/bracelet3d` stays).
 
 ## Bulk upload (`/admin/products/bulk`)
 
-Excel template → dry run (`POST /products/bulk-upload?dry_run=true`) → photos matched by file/folder name or the `photos` column (`components/admin/bulk/photoMatch.js`) → create with `hold_rows` (products with photos stay drafts) → photos shrunk in the browser (`compressImage.js`) and uploaded two products at a time → held products published.
+Excel template → dry run (`POST /products/bulk-upload?dry_run=true`) → photos (and one 360° video per product) matched by file/folder name or the `photos` / `video` columns (`components/admin/bulk/photoMatch.js`) → create with `hold_rows` (products with photos stay drafts) → photos shrunk in the browser (`compressImage.js`) and uploaded two products at a time → held products published.

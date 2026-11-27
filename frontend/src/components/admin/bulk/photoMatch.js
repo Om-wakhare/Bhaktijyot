@@ -96,3 +96,23 @@ export function matchNewPhotos(rows, newPhotos, current) {
   });
   return { assign: merged, unmatched: [...current.unmatched, ...unmatched] };
 }
+
+/**
+ * One 360° video per product, matched with the same rules as photos; an exact
+ * file name can be given in the row's "video" column. Extra videos for a
+ * product that already has one are left unmatched for the owner to place.
+ * Returns { videoOf: { [row]: videoId }, unmatched: [videoId] }.
+ */
+export function matchVideos(rows, videos, current = { videoOf: {}, unmatched: [] }) {
+  const asPhotos = rows.map((r) => ({ ...r, photos: r.video ? [r.video] : [] }));
+  const { assign, unmatched } = matchPhotos(asPhotos, videos);
+  const videoOf = { ...current.videoOf };
+  const extra = [...current.unmatched, ...unmatched];
+  Object.entries(assign).forEach(([row, ids]) => {
+    ids.forEach((id) => {
+      if (videoOf[row] == null) videoOf[row] = id;
+      else extra.push(id);
+    });
+  });
+  return { videoOf, unmatched: extra };
+}

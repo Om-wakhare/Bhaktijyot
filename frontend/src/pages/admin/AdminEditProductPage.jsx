@@ -5,7 +5,7 @@ import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import { ImageUploader } from '../../components/admin/ImageUploader';
 import { StockField } from '../../components/admin/StockField';
-import { Model3DField } from '../../components/admin/Model3DField';
+import { Spin360Video } from '../../components/product360/Spin360Video';
 import {
   Alert, Button, Card, ErrorState, Field, FileInput, Input, LoadingState, Page, Select, Textarea, Toggle, cn,
 } from '../../components/admin/ui';
@@ -56,9 +56,6 @@ export function AdminEditProductPage() {
   const [newImageFiles, setNewImageFiles] = useState([]);
   const [uploaderKey, setUploaderKey] = useState(0);
   const [uploadingImages, setUploadingImages] = useState(false);
-
-  // 360° 3D view (saved on its own, straight away)
-  const [saving3D, setSaving3D] = useState(false);
 
   // Video
   const [videoFile, setVideoFile] = useState(null);
@@ -121,22 +118,6 @@ export function AdminEditProductPage() {
   };
 
   // ── Save core fields ───────────────────────────────────────
-  const save3D = async (value) => {
-    const previous = form.model_type;
-    setForm((p) => ({ ...p, model_type: value }));
-    setSaving3D(true);
-    try {
-      const res = await api.put(`/products/${id}`, { model_type: value });
-      applyProduct(res.data);
-      toast.success('3D view saved');
-    } catch (err) {
-      setForm((p) => ({ ...p, model_type: previous }));
-      toast.error(getErrorMessage(err, 'Could not save the 3D view setting.'));
-    } finally {
-      setSaving3D(false);
-    }
-  };
-
   const handleSave = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -603,49 +584,35 @@ export function AdminEditProductPage() {
           )}
         </Card>
 
-        {/* 360° 3D view */}
-        <Card
-          title="360° 3D view"
-          subtitle="A turning 3D preview on the product page, made from the product name and main photo. Changes save straight away."
-        >
-          <Model3DField
-            value={form.model_type}
-            onChange={save3D}
-            disabled={saving3D}
-            hasPhoto={existingImages.length > 0}
-            draft={{
-              name: form.name,
-              slug: form.slug,
-              category: flatCats.find((c) => String(c.id) === String(form.category_id)) || null,
-              model_colors: product.model_colors,
-            }}
-          />
-        </Card>
-
         {/* Video */}
-        <Card title="Video (optional)">
+        <Card
+          title="360° view (optional)"
+          subtitle="Put the product on a turntable (or turn it slowly by hand) and record one full turn: 8–15 seconds, phone held still, plain background. Shoppers drag it to turn the product."
+        >
           {product.video_path && (
             <div className="mb-4">
-              <p className="text-xs text-espresso/60 mb-2">Current video:</p>
-              <video
-                key={product.video_path}
-                src={mediaUrl(product.video_path)}
-                controls
-                className="max-w-full max-h-[200px] rounded-lg"
-              />
+              <p className="text-xs text-espresso/60 mb-2">How shoppers see it (drag to try):</p>
+              <div className="aspect-square w-full max-w-xs overflow-hidden rounded-xl border border-espresso/10">
+                <Spin360Video
+                  key={product.video_path}
+                  src={mediaUrl(product.video_path)}
+                  poster={product.video_poster ? mediaUrl(product.video_poster) : undefined}
+                  label={product.name}
+                />
+              </div>
             </div>
           )}
           <Field
-            label={product.video_path ? 'Replace video' : 'Upload video'}
+            label={product.video_path ? 'Replace the 360° video' : 'Upload a 360° video'}
             error={videoError || undefined}
-            hint="MP4, WebM or MOV · max 50 MB"
+            hint="MP4, MOV or WebM · max 50 MB. It is converted for smooth turning, so uploading can take a little while."
           >
             <FileInput key={videoInputKey} accept={VIDEO_ACCEPT} onChange={onVideoChange} disabled={uploadingVideo} />
           </Field>
           {videoFile && (
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button onClick={handleUploadVideo} disabled={uploadingVideo}>
-                {uploadingVideo ? 'Uploading…' : 'Upload Video'}
+                {uploadingVideo ? 'Uploading and converting…' : 'Upload video'}
               </Button>
               <span className="text-[11px] text-espresso/60">{videoFile.name} · {formatBytes(videoFile.size)}</span>
             </div>

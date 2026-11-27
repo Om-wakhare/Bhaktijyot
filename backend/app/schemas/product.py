@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional, List
+from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.validators import validate_slug as _validate_slug
 
@@ -17,17 +17,6 @@ class CategoryMinimal(BaseModel):
         from_attributes = True
 
 
-# 3D preview shapes. "auto" (stored as NULL) lets the storefront pick from name/category.
-MODEL_TYPES = ("auto", "bracelet", "mala", "gemstone", "crystal", "raw", "none")
-ModelType = Literal["auto", "bracelet", "mala", "gemstone", "crystal", "raw", "none"]
-
-
-def _model_type(v):
-    if v is None or (isinstance(v, str) and v.strip().lower() in ("", "auto")):
-        return None
-    return v.strip().lower() if isinstance(v, str) else v
-
-
 def _blank_to_none(v):
     if isinstance(v, str) and not v.strip():
         return None
@@ -35,8 +24,6 @@ def _blank_to_none(v):
 
 
 class ProductBase(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())  # allow model_type field
-
     name: str = Field(min_length=1, max_length=255)
     slug: str
     description: Optional[str] = None
@@ -49,7 +36,6 @@ class ProductBase(BaseModel):
     stock: int = Field(default=-1, ge=-1)
     is_active: bool = True
     sort_order: int = 0
-    model_type: Optional[ModelType] = None
 
     @field_validator("slug")
     @classmethod
@@ -64,11 +50,6 @@ class ProductBase(BaseModel):
             raise ValueError("Name is required")
         return v
 
-    @field_validator("model_type", mode="before")
-    @classmethod
-    def _model_type(cls, v):
-        return _model_type(v)
-
     @field_validator("price", "mrp", "category_id", "badge", mode="before")
     @classmethod
     def _blank(cls, v):
@@ -80,8 +61,6 @@ class ProductCreate(ProductBase):
 
 
 class ProductUpdate(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())  # allow model_type field
-
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     slug: Optional[str] = None
     description: Optional[str] = None
@@ -93,13 +72,7 @@ class ProductUpdate(BaseModel):
     stock: Optional[int] = Field(default=None, ge=-1)
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
-    model_type: Optional[ModelType] = None
     # NOTE: image_path / video_path are managed only through the media endpoints
-
-    @field_validator("model_type", mode="before")
-    @classmethod
-    def _model_type(cls, v):
-        return _model_type(v)
 
     @field_validator("price", "mrp", "category_id", "badge", mode="before")
     @classmethod
@@ -144,15 +117,13 @@ class ProductRead(BaseModel):
     image_path: Optional[str] = None
     video_path: Optional[str] = None
     images: List[ProductImageRead] = []
-    model_type: Optional[str] = None
-    model_colors: Optional[List[str]] = None
+    video_poster: Optional[str] = None
     rating_avg: Optional[float] = None
     rating_count: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     class Config:
-        protected_namespaces = ()
         from_attributes = True
 
     @field_validator('is_active', mode='before')
@@ -198,8 +169,6 @@ class BulkRowError(BaseModel):
 
 class BulkRowPreview(BaseModel):
     """One parsed spreadsheet row (returned by a dry run, nothing saved)."""
-    model_config = ConfigDict(protected_namespaces=())
-
     row: int
     name: Optional[str] = None
     slug: Optional[str] = None
@@ -208,8 +177,8 @@ class BulkRowPreview(BaseModel):
     mrp: Optional[float] = None
     stock: Optional[int] = None
     status: Optional[str] = None  # "published" | "draft"
-    model_type: Optional[str] = None
     photos: List[str] = []
+    video: Optional[str] = None
     error: Optional[str] = None
 
 

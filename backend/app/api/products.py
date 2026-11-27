@@ -6,6 +6,7 @@ from typing import List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from PIL import Image as PilImage, ImageOps, UnidentifiedImageError
 from sqlalchemy import asc, desc, or_
@@ -20,10 +21,9 @@ from app.models.order import OrderItem
 from app.models.product_image import ProductImage
 from app.models.product import Product
 from app.services.category_tree import WORLDS, category_ids_in_world, descendant_ids
-from app.services.palette import extract_palette, palette_to_str
 from app.services.storage import delete_public_file, public_path
+from app.services.video import optimize_video
 from app.schemas.product import (
-    MODEL_TYPES,
     BulkCreatedItem,
     BulkRowError,
     BulkRowPreview,
@@ -73,7 +73,7 @@ def _make_slug(name: str) -> str:
 _PRODUCT_SIZE = 1000  # all product images are stored as 1000×1000 squares
 
 
-def _process_and_save_image(content: bytes, upload_dir: Path, product_id: int) -> tuple[str, Optional[str]]:
+def _process_and_save_image(content: bytes, upload_dir: Path, product_id: int) -> str:
     """
     Normalise an uploaded product image to a 1000×1000 square:
     - Apply the camera's EXIF rotation (phone photos otherwise appear sideways)
@@ -81,7 +81,6 @@ def _process_and_save_image(content: bytes, upload_dir: Path, product_id: int) -
     - Centre on a white canvas so all stored images are exactly square
     - Save as WebP quality=85 under a unique name (names must never be reused:
       sort orders change when images are deleted or reordered)
-    Returns (public path, dominant-colour palette for the 3D preview).
     """
     try:
         img = PilImage.open(io.BytesIO(content))
@@ -109,11 +108,7 @@ def _process_and_save_image(content: bytes, upload_dir: Path, product_id: int) -
 
     full_name = f"product_{product_id}_{uuid.uuid4().hex[:12]}.webp"
     canvas.save(upload_dir / full_name, "WEBP", quality=85, optimize=True)
-    try:
-        palette = palette_to_str(extract_palette(canvas))
-    except Exception:  # noqa: BLE001 — colours are a nice-to-have, never fail the upload
-        palette = None
-    return public_path("uploads", settings.PRODUCT_SUBDIR, full_name), palette
+    return public_path("uploads", settings.PRODUCT_SUBDIR, full_name)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -136,13 +131,13 @@ def generate_slug(
 _BULK_COLUMNS = [
     "name", "slug", "description", "benefits",
     "price", "mrp", "badge", "category", "stock",
-    "status", "3d_model", "photos",
+    "status", "photos", "video",
 ]
 # Friendlier header spellings people type by hand
 _BULK_ALIASES = {
     "product name": "name", "product": "name",
     "images": "photos", "image": "photos", "photo": "photos", "photo files": "photos",
-    "3d model": "3d_model", "3d": "3d_model", "model": "3d_model", "3d view": "3d_model",
+    "videos": "video", "360 video": "video", "360": "video", "video file": "video",
     "published": "status", "visibility": "status",
     "quantity": "stock", "qty": "stock",
 }
@@ -187,12 +182,13 @@ def bulk_template(db: Session = Depends(get_db), _: str = Depends(get_current_ad
     ws.append([
         "Natural Amethyst Bracelet", "", "Genuine amethyst crystal bracelet, 8 mm beads.",
         "Calms the mind, aids intuition.", 1499, 2499, "Bestseller",
-        categories[0] if categories else "", -1, "Published", "auto",
+        categories[0] if categories else "", -1, "Published",
         "Natural Amethyst Bracelet 1.jpg, Natural Amethyst Bracelet 2.jpg",
+        "Natural Amethyst Bracelet.mp4",
     ])
     ws.append([
         "Yellow Sapphire 5 Ratti", "", "Certified natural yellow sapphire.",
-        "", 15500, "", "Certified", "", 1, "Draft", "gemstone", "",
+        "", 15500, "", "Certified", "", 1, "Draft", "", "",
     ])
     head_fill = PatternFill("solid", fgColor="1D3D2C")
     for cell in ws[1]:
@@ -208,11 +204,8 @@ def bulk_template(db: Session = Depends(get_db), _: str = Depends(get_current_ad
 
     last = MAX_BULK_ROWS + 1
     status_dv = DataValidation(type="list", formula1='"Published,Draft"', allow_blank=True)
-    model_dv = DataValidation(type="list", formula1='"' + ",".join(MODEL_TYPES) + '"', allow_blank=True)
     ws.add_data_validation(status_dv)
-    ws.add_data_validation(model_dv)
     status_dv.add(f"{col_letter('status')}2:{col_letter('status')}{last}")
-    model_dv.add(f"{col_letter('3d_model')}2:{col_letter('3d_model')}{last}")
 
     cats = wb.create_sheet("Categories")
     cats.append(["Category names you can use"])
@@ -236,12 +229,14 @@ def bulk_template(db: Session = Depends(get_db), _: str = Depends(get_current_ad
         ("3. category: pick from the dropdown (the list is on the Categories sheet). Leave empty if unsure.", False),
         ("4. stock: leave empty or -1 if you don't count stock. Type a number (e.g. 5) to track it; 0 means out of stock.", False),
         ("5. status: Published shows the product on the website; Draft keeps it hidden until you publish it.", False),
-        ("6. 3d_model: the 360° 3D view on the product page. 'auto' picks the shape from the product name. You can also choose bracelet, mala, gemstone, crystal or raw, or none to switch it off.", False),
         ("", False),
         ("Photos (up to 4 per product; the first one is the main photo)", True),
         ("Easiest: name each photo file after the product, e.g. 'Natural Amethyst Bracelet 1.jpg', 'Natural Amethyst Bracelet 2.jpg'. Or put each product's photos in a folder named after the product.", False),
         ("Then, on the Bulk upload page, choose this Excel file and drop all the photos in. They are matched to the right products automatically, and you can check everything before saving.", False),
         ("Optional: type exact file names in the 'photos' column, separated by commas.", False),
+        ("", False),
+        ("360° video (optional, one per product)", True),
+        ("Put the product on a turntable (or turn it slowly by hand) and record ONE full turn, 8 to 15 seconds, phone held still, plain background. Name the file after the product, e.g. 'Natural Amethyst Bracelet.mp4', or type its file name in the 'video' column. Shoppers drag the video on the product page to turn the product.", False),
         ("", False),
         ("slug is the product's web address. Leave it empty and it is made from the name.", False),
     ]
@@ -410,10 +405,6 @@ async def bulk_upload(
             else:
                 raise ValueError(f"status '{status_raw}' should be Published or Draft")
 
-            model_raw = (_clean_cell(get(row, "3d_model")) or "auto").lower()
-            if model_raw not in MODEL_TYPES:
-                raise ValueError(f"3d_model '{model_raw}' should be one of: {', '.join(MODEL_TYPES)}")
-
             badge = _clean_cell(get(row, "badge"))
             if badge and len(badge) > 100:
                 raise ValueError("badge is longer than 100 characters")
@@ -428,7 +419,8 @@ async def bulk_upload(
                 "slug": slug_val, "category": category_name, "category_id": category_id,
                 "price": price, "mrp": mrp, "stock": stock_val, "badge": badge,
                 "status": "published" if is_active else "draft", "is_active": is_active,
-                "model_type": model_raw, "photos": _photo_names(get(row, "photos")),
+                "photos": _photo_names(get(row, "photos")),
+                "video": (_photo_names(get(row, "video")) or [None])[0],
                 "description": _clean_cell(get(row, "description")),
                 "benefits": _clean_cell(get(row, "benefits")),
             })
@@ -458,7 +450,6 @@ async def bulk_upload(
             price=it["price"], mrp=it["mrp"], badge=it["badge"],
             category_id=it["category_id"], stock=it["stock"],
             is_active=it["is_active"] and not held,
-            model_type=None if it["model_type"] == "auto" else it["model_type"],
         )
         db.add(product)
         created.append((it, product, held))
@@ -718,7 +709,7 @@ def delete_product(
             detail="This product has orders, so it can't be deleted (order history needs it). "
                    "Unpublish it instead by setting it to Draft.",
         )
-    files = [img.image_path for img in product.images] + [product.image_path, product.video_path]
+    files = [img.image_path for img in product.images] + [product.image_path, product.video_path, product.video_poster]
     db.delete(product)
     db.commit()
     for f in set(filter(None, files)):
@@ -806,14 +797,13 @@ async def upload_product_media(
                 )
 
             # Process with Pillow and save as WebP
-            saved_path, palette = _process_and_save_image(content, upload_dir, product_id)
+            saved_path = _process_and_save_image(content, upload_dir, product_id)
 
             db.add(
                 ProductImage(
                     product_id=product_id,
                     image_path=saved_path,
                     sort_order=sort_order,
-                    palette=palette,
                 )
             )
             sort_order += 1
@@ -838,12 +828,28 @@ async def upload_product_media(
         content = await video.read(MAX_VIDEO_BYTES + 1)
         if len(content) > MAX_VIDEO_BYTES:
             raise HTTPException(status_code=400, detail="Video exceeds the 50 MB limit.")
-        video_name = f"product_{product_id}_video_{uuid.uuid4().hex[:10]}.{video_ext}"
-        (upload_dir / video_name).write_bytes(content)
-        old_video = product.video_path
-        product.video_path = public_path("uploads", settings.PRODUCT_SUBDIR, video_name)
-        if old_video and old_video != product.video_path:
-            delete_public_file(old_video)
+        stem = f"product_{product_id}_video_{uuid.uuid4().hex[:10]}"
+        original = upload_dir / f"{stem}_original.{video_ext}"
+        original.write_bytes(content)
+        converted = upload_dir / f"{stem}.mp4"
+        poster = upload_dir / f"{stem}.jpg"
+        # Convert for the 360° viewer (plays everywhere, drags smoothly); runs in a
+        # worker thread so other requests aren't blocked while FFmpeg works.
+        if await run_in_threadpool(optimize_video, original, converted, poster):
+            original.unlink(missing_ok=True)
+            video_file, poster_file = converted, (poster if poster.is_file() else None)
+        else:
+            video_file = original.rename(upload_dir / f"{stem}.{video_ext}")
+            poster_file = None
+
+        old_video, old_poster = product.video_path, product.video_poster
+        product.video_path = public_path("uploads", settings.PRODUCT_SUBDIR, video_file.name)
+        product.video_poster = (
+            public_path("uploads", settings.PRODUCT_SUBDIR, poster_file.name) if poster_file else None
+        )
+        for old in (old_video, old_poster):
+            if old and old not in (product.video_path, product.video_poster):
+                delete_public_file(old)
 
     db.commit()
     return _load_product(product_id, db)
