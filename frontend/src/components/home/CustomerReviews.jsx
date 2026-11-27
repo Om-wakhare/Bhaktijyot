@@ -16,8 +16,10 @@ const H_PRIMARY = {
   color: DARK,
   textShadow: '0 0 18px rgba(212,175,55,0.45), 0 0 40px rgba(212,175,55,0.18)',
 };
+/* Eyebrow colour comes from the text-gold-700 class (EYEBROW_CLASS): the brighter
+   golds fail WCAG AA contrast on ivory and white. */
+const EYEBROW_CLASS = 'text-gold-700';
 const H_EYEBROW = {
-  color: GOLD,
   fontSize: '0.8rem',
   fontWeight: 600,
   letterSpacing: '0.05em',
@@ -41,7 +43,6 @@ const CARD_H_PRIMARY = {
   marginBottom: '0.4rem',
 };
 const CARD_H_EYEBROW = {
-  color: GOLD,
   fontSize: '0.7rem',
   fontWeight: 700,
   letterSpacing: '0.22em',
@@ -141,7 +142,7 @@ function ReviewCard({ review }) {
           </div>
         </div>
         {review.product_name && (
-          <span className="text-[9px] text-espresso/60 font-medium leading-tight text-right max-w-[70px] shrink-0">
+          <span className="text-[11px] text-espresso/65 font-medium leading-tight text-right max-w-[90px] shrink-0">
             {review.product_name}
           </span>
         )}
@@ -180,15 +181,33 @@ function WriteReviewSection() {
   const [error, setError]             = useState('');
   const thanksRef = useRef(null);
 
+  // The catalogue endpoint returns at most 100 products per page, so fetch every
+  // page (capped) to list all products in the picker.
   useEffect(() => {
     let cancelled = false;
-    api.get('/products/catalog', { params: { limit: 100 } })
-      .then((r) => {
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 10;
+    const fetchPage = (page) =>
+      api.get('/products/catalog', { params: { limit: PAGE_SIZE, page, sort: 'name_asc' } });
+
+    (async () => {
+      try {
+        const first = await fetchPage(1);
+        const total = Number(first.data?.total) || 0;
+        const pages = Math.min(MAX_PAGES, Math.ceil(total / PAGE_SIZE));
+        const rest = pages > 1
+          ? await Promise.all(Array.from({ length: pages - 1 }, (_, i) => fetchPage(i + 2)))
+          : [];
         if (cancelled) return;
-        const list = r.data?.items || (Array.isArray(r.data) ? r.data : []);
-        setProducts([...list].sort((a, b) => String(a.name).localeCompare(String(b.name))));
-      })
-      .catch(() => { if (!cancelled) setProductsError(true); });
+        const seen = new Set();
+        const list = [first, ...rest]
+          .flatMap((r) => r.data?.items || [])
+          .filter((p) => p && !seen.has(p.id) && seen.add(p.id));
+        setProducts(list.sort((a, b) => String(a.name).localeCompare(String(b.name))));
+      } catch {
+        if (!cancelled) setProductsError(true);
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -235,7 +254,7 @@ function WriteReviewSection() {
 
       {/* ── Left — hero typography on ivory bg ── */}
       <div className="space-y-5">
-        <p style={H_EYEBROW}>✦ Share Your Experience ✦</p>
+        <p className={EYEBROW_CLASS} style={H_EYEBROW}>✦ Share Your Experience ✦</p>
 
         <h3 className="font-display" style={H_PRIMARY}>
           Loved our<br /><em>Products?</em>
@@ -286,7 +305,7 @@ function WriteReviewSection() {
         ) : (
           <div className="bg-white" style={{ border: GOLD_BORDER, borderRadius: '1.25rem', padding: '1.75rem', boxShadow: GOLD_GLOW }}>
 
-            <p style={CARD_H_EYEBROW}>✦ Your Review ✦</p>
+            <p className={EYEBROW_CLASS} style={CARD_H_EYEBROW}>✦ Your Review ✦</p>
 
             <h3 className="font-display" style={CARD_H_PRIMARY}>Write a Review</h3>
 
@@ -329,6 +348,7 @@ function WriteReviewSection() {
                       value={form.rating}
                       size="md"
                       interactive
+                      labelledBy={ids.rating}
                       onChange={(v) => setForm((f) => ({ ...f, rating: v }))}
                     />
                     <span aria-live="polite" style={{ fontSize: '0.75rem', color: 'rgba(28,18,9,0.65)' }}>
@@ -430,7 +450,7 @@ export function CustomerReviews() {
 
         {/* Section heading */}
         <div className="space-y-2 mb-10">
-          <p style={H_EYEBROW}>✨ What People Say</p>
+          <p className={EYEBROW_CLASS} style={H_EYEBROW}>✨ What People Say</p>
           <h2 id="customer-reviews-heading" className="font-display" style={H_PRIMARY}>Customer Reviews</h2>
         </div>
 

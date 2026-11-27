@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { ShieldCheck, BadgeCheck, Award, Users } from 'lucide-react';
-import { mediaUrl } from '../../services/media';
 import heroImg from '../../assets/hero-section1.webp';
 
 const TRUST_BADGES = [
@@ -15,30 +14,31 @@ const GOLD_BORDER = '1.5px solid rgba(212,175,55,0.75)';
 const OFF_WHITE   = '#FFF5E6';
 const GOLD        = '#D4AF37';
 
-export function HeroSection({
-  tagLabel  = '✨ Trusted by Devotees Since 1985',
-  heading   = 'Discover the Power\nof Faith, Energy\n& Tradition',
-  subline   = 'Handpicked gemstones, certified crystals, and authentic pooja essentials to enrich your spiritual path.',
-  ctaText   = 'Discover Our Range',
-  ctaUrl    = '/products',
-  heroImage = null,
-  trustLine = 'Join 10,000+ families across India',
-}) {
-  const bg = heroImage ? mediaUrl(heroImage) : heroImg;
+/* Hero copy. These are fixed here on purpose: Admin → Settings has no hero
+   fields (the backend site-config only stores the announcement bar and the
+   WhatsApp number). */
+const TAG_LABEL  = '✨ Trusted by Devotees Since 1985';
+const HEADING    = 'Discover the Power\nof Faith, Energy\n& Tradition';
+const SUBLINE    = 'Handpicked gemstones, certified crystals, and authentic pooja essentials to enrich your spiritual path.';
+const CTA_TEXT   = 'Discover Our Range';
+const CTA_URL    = '/products';
+const TRUST_LINE = 'Join 10,000+ families across India';
 
+export function HeroSection() {
   return (
     <section className="relative overflow-hidden min-h-[88vh] flex items-center">
 
       {/* Background image (decorative — the heading carries the meaning) */}
       <img
-        src={bg}
+        src={heroImg}
         alt=""
         aria-hidden="true"
         className="absolute inset-0 w-full h-full object-cover object-center"
       />
 
-      {/* Gradient overlay */}
-      <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-espresso/85 via-espresso/55 to-transparent" />
+      {/* Gradient overlay. On phones the text spans the full width, so the
+          overlay stays dark all the way across to keep the copy readable. */}
+      <div aria-hidden="true" className="absolute inset-0 bg-espresso/70 sm:bg-transparent sm:bg-gradient-to-r sm:from-espresso/85 sm:via-espresso/55 sm:to-transparent" />
 
       {/* Content box — golden glittery border */}
       <div className="relative z-10 w-full max-w-screen-xl mx-auto px-6 sm:px-10 lg:px-16 py-16">
@@ -46,7 +46,7 @@ export function HeroSection({
 
           {/* Tagline */}
           <p style={{ color: GOLD, fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.05em' }}>
-            {tagLabel}
+            {TAG_LABEL}
           </p>
 
           {/* Heading — off-white with gold glitter glow on the text */}
@@ -59,18 +59,18 @@ export function HeroSection({
               textShadow: `0 0 8px rgba(212,175,55,0.6), 0 0 20px rgba(212,175,55,0.3), 0 2px 12px rgba(0,0,0,0.5)`,
             }}
           >
-            {heading}
+            {HEADING}
           </h1>
 
           {/* Subheading */}
           <p style={{ color: 'rgba(255,245,230,0.70)', fontSize: '0.95rem', lineHeight: 1.7 }}>
-            {subline}
+            {SUBLINE}
           </p>
 
           {/* CTA Buttons — off-white text + golden glittery border */}
           <div className="flex flex-col sm:flex-row gap-3 pt-1">
             <Link
-              to={ctaUrl}
+              to={CTA_URL}
               className="inline-flex items-center justify-center px-9 py-3.5 text-sm font-bold uppercase tracking-[0.12em] transition-all hover:scale-[1.02]"
               style={{
                 borderRadius: '4px',
@@ -81,7 +81,7 @@ export function HeroSection({
                 textShadow: `0 0 8px rgba(212,175,55,0.4)`,
               }}
             >
-              {ctaText}
+              {CTA_TEXT}
             </Link>
             <Link
               to="/verify"
@@ -99,11 +99,9 @@ export function HeroSection({
           </div>
 
           {/* Trust line */}
-          {trustLine && (
-            <p style={{ color: 'rgba(255,245,230,0.62)', fontSize: '0.72rem', fontWeight: 500 }}>
-              {trustLine}
-            </p>
-          )}
+          <p style={{ color: 'rgba(255,245,230,0.62)', fontSize: '0.72rem', fontWeight: 500 }}>
+            {TRUST_LINE}
+          </p>
 
           {/* Trust badges */}
           <ul

@@ -233,9 +233,10 @@ export function SecondaryNavbar({ categories = [] }) {
           ))}
         </ul>
 
-        {/* Categories dropdown — rendered outside the scrolling row so it isn't clipped */}
+        {/* Categories dropdown — rendered outside the scrolling row so it isn't clipped.
+            z-40 keeps it under the sticky header (z-50) when the page scrolls. */}
         {openWorld && openCats.length > 0 && (
-          <div className="absolute top-full inset-x-0 z-50 mt-2 md:grid md:grid-cols-3 md:gap-4 pointer-events-none">
+          <div className="absolute top-full inset-x-0 z-40 mt-2 md:grid md:grid-cols-3 md:gap-4 pointer-events-none">
             <div
               id={menuId(openWorld.key)}
               ref={menuRef}

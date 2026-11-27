@@ -44,7 +44,7 @@ export function LegalPage({ eyebrow, title, intro, children }) {
     <div className="bg-cream">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
         <header className="text-center mb-8">
-          <p className="text-[0.7rem] font-extrabold uppercase tracking-[0.35em] text-gold mb-3">
+          <p className="text-[0.7rem] font-extrabold uppercase tracking-[0.35em] text-gold-700 mb-3">
             <span aria-hidden="true">✦ </span>{eyebrow}<span aria-hidden="true"> ✦</span>
           </p>
           <h1 className="font-display text-3xl sm:text-4xl font-semibold text-espresso leading-tight">{title}</h1>

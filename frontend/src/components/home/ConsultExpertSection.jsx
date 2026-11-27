@@ -18,8 +18,10 @@ const H_PRIMARY = {
   color: DARK,
   textShadow: '0 0 18px rgba(212,175,55,0.45), 0 0 40px rgba(212,175,55,0.18)',
 };
+/* Eyebrow colour comes from the text-gold-700 class (EYEBROW_CLASS): the brighter
+   golds fail WCAG AA contrast on cream and white. */
+const EYEBROW_CLASS = 'text-gold-700';
 const H_EYEBROW = {
-  color: GOLD,
   fontSize: '0.8rem',
   fontWeight: 600,
   letterSpacing: '0.05em',
@@ -44,7 +46,6 @@ const CARD_H_PRIMARY = {
   marginBottom: '0.4rem',
 };
 const CARD_H_EYEBROW = {
-  color: GOLD,
   fontSize: '0.7rem',
   fontWeight: 700,
   letterSpacing: '0.22em',
@@ -226,11 +227,17 @@ export function ConsultExpertSection() {
   /* ── Expert carousel — auto-rotates, pauses on hover/focus and for reduced motion ── */
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [stopped, setStopped] = useState(false); // the visitor picked an expert: stop rotating
   useEffect(() => {
-    if (paused || EXPERTS.length < 2 || prefersReducedMotion()) return undefined;
+    if (paused || stopped || EXPERTS.length < 2 || prefersReducedMotion()) return undefined;
     const t = setInterval(() => setActive((i) => (i + 1) % EXPERTS.length), 4500);
     return () => clearInterval(t);
-  }, [paused]);
+  }, [paused, stopped]);
+
+  const showExpert = (i) => {
+    setStopped(true);
+    setActive(i);
+  };
 
   // Move focus to the confirmation so screen-reader users hear it
   useEffect(() => {
@@ -280,7 +287,7 @@ export function ConsultExpertSection() {
 
         {/* ── Header — centered ── */}
         <div className="text-center max-w-2xl mx-auto mb-12 lg:mb-16">
-          <p style={{ ...H_EYEBROW, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+          <p className={EYEBROW_CLASS} style={{ ...H_EYEBROW, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
             ✨ Meet Our Experts · Since 1985
           </p>
           <h2 id={`${uid}-heading`} className="font-display mt-3" style={H_PRIMARY}>Consult an Expert</h2>
@@ -293,34 +300,58 @@ export function ConsultExpertSection() {
         {/* ── Two columns — auto-rotating expert carousel (left) + form (right) ── */}
         <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-stretch">
 
-          {/* ── LEFT — expert carousel (auto-rotating) ── */}
+          {/* ── LEFT — expert carousel (auto-rotates; the dots below pick an expert
+                 and stop the rotation, which also works on touch screens) ── */}
           <div
             role="group"
+            aria-roledescription="carousel"
             aria-label="Our experts"
-            style={{ overflow: 'hidden', borderRadius: '1.25rem' }}
+            className="flex flex-col gap-3"
             onMouseEnter={() => setPaused(true)}
             onMouseLeave={() => setPaused(false)}
             onFocus={() => setPaused(true)}
             onBlur={() => setPaused(false)}
           >
-            <div style={{
-              display: 'flex',
-              height: '100%',
-              transform: `translateX(-${active * 100}%)`,
-              transition: 'transform 0.7s cubic-bezier(0.4,0,0.2,1)',
-            }}>
-              {EXPERTS.map((expert, i) => (
-                <div
-                  key={expert.name}
-                  style={{ minWidth: '100%', display: 'flex' }}
-                  aria-hidden={i === active ? undefined : 'true'}
-                >
-                  <div style={{ flex: 1 }}>
-                    <ExpertCard expert={expert} />
+            <div style={{ overflow: 'hidden', borderRadius: '1.25rem', flex: 1 }}>
+              <div style={{
+                display: 'flex',
+                height: '100%',
+                transform: `translateX(-${active * 100}%)`,
+                transition: 'transform 0.7s cubic-bezier(0.4,0,0.2,1)',
+              }}>
+                {EXPERTS.map((expert, i) => (
+                  <div
+                    key={expert.name}
+                    style={{ minWidth: '100%', display: 'flex' }}
+                    aria-hidden={i === active ? undefined : 'true'}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <ExpertCard expert={expert} />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+
+            {EXPERTS.length > 1 && (
+              <div className="flex items-center justify-center gap-1">
+                {EXPERTS.map((expert, i) => (
+                  <button
+                    key={expert.name}
+                    type="button"
+                    onClick={() => showExpert(i)}
+                    aria-label={`Show ${expert.name}`}
+                    aria-pressed={i === active}
+                    className="h-8 w-8 flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-700"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`block h-2.5 rounded-full transition-all ${i === active ? 'w-6 bg-gold-700' : 'w-2.5 bg-espresso/25'}`}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── RIGHT — booking form ── */}
@@ -374,7 +405,7 @@ export function ConsultExpertSection() {
               </div>
             ) : (
               <>
-                <p style={{ ...CARD_H_EYEBROW, textAlign: 'center' }}>✦ Quick Booking ✦</p>
+                <p className={EYEBROW_CLASS} style={{ ...CARD_H_EYEBROW, textAlign: 'center' }}>✦ Quick Booking ✦</p>
 
                 <h3 className="font-display" style={{ ...CARD_H_PRIMARY, textAlign: 'center' }}>Get in Touch</h3>
 

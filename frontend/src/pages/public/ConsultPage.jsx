@@ -243,7 +243,7 @@ export function ConsultPage() {
       {/* ── Hero ── */}
       <section style={{ background: '#F4E4D1', paddingTop: 'clamp(3rem,8vw,5rem)', paddingBottom: 'clamp(3rem,8vw,5rem)', textAlign: 'center' }}>
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 1.25rem' }}>
-          <p style={{ color: '#C9A84C', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.42em', marginBottom: '1rem' }}>
+          <p className="text-gold-700" style={{ fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.42em', marginBottom: '1rem' }}>
             ✦ Certified Gemologist · Crystal Healer ✦
           </p>
           <h1 style={{ color: '#1C1209', fontSize: 'clamp(2.25rem,5vw,3.5rem)', fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.02em', marginBottom: '1.25rem' }}>
@@ -269,7 +269,7 @@ export function ConsultPage() {
       {/* ── What You Get ── */}
       <section style={{ padding: 'clamp(3rem,6vw,5rem) 1.25rem', background: '#FFF8F0' }}>
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <p style={{ color: '#C9A84C', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.40em', textAlign: 'center', marginBottom: '0.65rem' }}>
+          <p className="text-gold-700" style={{ fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.40em', textAlign: 'center', marginBottom: '0.65rem' }}>
             ✦ Our Services ✦
           </p>
           <h2 style={{ color: '#1C1209', fontSize: 'clamp(1.6rem,3vw,2.2rem)', fontWeight: 600, textAlign: 'center', marginBottom: '2.5rem', letterSpacing: '-0.01em' }}>
@@ -293,7 +293,7 @@ export function ConsultPage() {
       {/* ── Booking Form ── */}
       <section style={{ padding: 'clamp(3rem,6vw,5rem) 1.25rem', background: '#F4E4D1' }}>
         <div style={{ maxWidth: 580, margin: '0 auto' }}>
-          <p style={{ color: '#C9A84C', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.40em', textAlign: 'center', marginBottom: '0.65rem' }}>
+          <p className="text-gold-700" style={{ fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.40em', textAlign: 'center', marginBottom: '0.65rem' }}>
             ✦ Book Now ✦
           </p>
           <h2 style={{ color: '#1C1209', fontSize: 'clamp(1.6rem,3vw,2.2rem)', fontWeight: 600, textAlign: 'center', marginBottom: '0.5rem', letterSpacing: '-0.01em' }}>
@@ -485,7 +485,7 @@ export function ConsultPage() {
       {/* ── FAQ ── */}
       <section style={{ padding: 'clamp(3rem,6vw,5rem) 1.25rem', background: '#FFF8F0' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          <p style={{ color: '#C9A84C', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.40em', textAlign: 'center', marginBottom: '0.65rem' }}>
+          <p className="text-gold-700" style={{ fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.40em', textAlign: 'center', marginBottom: '0.65rem' }}>
             ✦ FAQ ✦
           </p>
           <h2 style={{ color: '#1C1209', fontSize: 'clamp(1.6rem,3vw,2.2rem)', fontWeight: 600, textAlign: 'center', marginBottom: '2rem', letterSpacing: '-0.01em' }}>

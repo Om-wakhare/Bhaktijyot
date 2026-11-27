@@ -7,6 +7,13 @@ import { useWishlist } from '../../services/wishlist';
 import { useSiteConfig, useWhatsAppNumber, whatsappLink } from '../../services/siteConfig';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { WhatsAppIcon } from '../ui/WhatsAppIcon';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import logo from '../../assets/final-logo.webp';
 
 import { AnnouncementBar } from '../layout/AnnouncementBar';
@@ -28,6 +35,9 @@ const MOBILE_LINKS = [
   { to: '/consult',     label: 'Consult Expert' },
   { to: '/contact',     label: 'Contact' },
 ];
+
+// Same breakpoint as Tailwind's `lg`, where the desktop header takes over
+const DESKTOP_QUERY = '(min-width: 1024px)';
 
 export function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -53,19 +63,22 @@ export function PublicLayout() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  // Lock background scroll while the mobile menu is open
+  // The menu only exists below `lg`: close it if the screen grows past that
+  // (a tablet rotated to landscape, say) so no invisible modal stays open.
   useEffect(() => {
-    if (!mobileOpen) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [mobileOpen]);
-
-  useEffect(() => {
-    if (!mobileOpen) return;
-    const onKey = (e) => { if (e.key === 'Escape') setMobileOpen(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    if (!mobileOpen || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    if (mq.matches) {
+      setMobileOpen(false);
+      return undefined;
+    }
+    const onChange = (e) => { if (e.matches) setMobileOpen(false); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange); // older Safari
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+    };
   }, [mobileOpen]);
 
   useEffect(() => {
@@ -97,52 +110,138 @@ export function PublicLayout() {
 
       <div className={`sticky top-0 z-50 transition-shadow duration-200 ${scrolled ? 'shadow-md' : ''}`}>
 
-        {/* Mobile top bar */}
-        <div className="lg:hidden border-b border-espresso/10 flex items-center h-20 px-4 gap-3" style={{ backgroundColor: '#F7E7D5' }}>
-          <button
-            type="button"
-            className="h-9 w-9 flex items-center justify-center text-espresso/70 hover:text-espresso transition-colors"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-menu"
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+        {/* Mobile top bar + slide-in menu. Radix handles the focus trap, Escape,
+            background scroll lock and returning focus to the hamburger. */}
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <div className="lg:hidden border-b border-espresso/10 flex items-center h-20 px-4 gap-3" style={{ backgroundColor: '#F7E7D5' }}>
+            <SheetTrigger asChild>
+              <button
+                type="button"
+                className="h-10 w-10 -ml-1 flex items-center justify-center rounded-full text-espresso/70 hover:text-espresso hover:bg-espresso/8 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </SheetTrigger>
 
-          <Link to="/" className="flex-1 flex justify-center">
-            <img src={logo} alt="Bhaktijyot" className="h-16 w-auto object-contain" />
-          </Link>
+            <Link to="/" className="flex-1 flex justify-center" aria-label="Bhaktijyot — home">
+              <img src={logo} alt="Bhaktijyot" className="h-16 w-auto object-contain" />
+            </Link>
 
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setWishlistOpen(true)}
-              aria-label={`Wishlist${wishlistCount > 0 ? ` (${wishlistCount} item${wishlistCount > 1 ? 's' : ''})` : ''}`}
-              className="relative h-9 w-9 flex items-center justify-center text-espresso/60 hover:text-red-500 transition-colors"
-            >
-              <Heart className="h-4 w-4" />
-              {wishlistCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                  {wishlistCount > 9 ? '9+' : wishlistCount}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCartOpen(true)}
-              aria-label={`Cart${totalItems > 0 ? ` (${totalItems} item${totalItems > 1 ? 's' : ''})` : ''}`}
-              className="relative h-9 w-9 flex items-center justify-center text-espresso/60 hover:text-espresso transition-colors"
-            >
-              <ShoppingBag className="h-4 w-4" />
-              {totalItems > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 h-4 w-4 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                  {totalItems > 9 ? '9+' : totalItems}
-                </span>
-              )}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setWishlistOpen(true)}
+                aria-label={`Wishlist${wishlistCount > 0 ? ` (${wishlistCount} item${wishlistCount > 1 ? 's' : ''})` : ''}`}
+                className="relative h-10 w-10 flex items-center justify-center rounded-full text-espresso/60 hover:text-red-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <Heart className="h-4 w-4" aria-hidden="true" />
+                {wishlistCount > 0 && (
+                  <span aria-hidden="true" className="absolute top-0.5 right-0.5 h-4 w-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {wishlistCount > 9 ? '9+' : wishlistCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCartOpen(true)}
+                aria-label={`Cart${totalItems > 0 ? ` (${totalItems} item${totalItems > 1 ? 's' : ''})` : ''}`}
+                className="relative h-10 w-10 flex items-center justify-center rounded-full text-espresso/60 hover:text-espresso transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+                {totalItems > 0 && (
+                  <span aria-hidden="true" className="absolute top-0.5 right-0.5 h-4 w-4 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {totalItems > 9 ? '9+' : totalItems}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
+
+          <SheetContent
+            side="left"
+            hideClose
+            aria-describedby={undefined}
+            className="flex flex-col gap-0 p-0 w-[85vw] max-w-sm bg-ivory border-espresso/10"
+          >
+            {/* Header. The close button is the first focusable element, so opening
+                the menu doesn't focus the search box and pop up the phone keyboard. */}
+            <div className="flex items-center justify-between gap-3 px-4 h-16 border-b border-espresso/10 shrink-0">
+              <SheetTitle className="font-display text-lg font-semibold text-espresso">Menu</SheetTitle>
+              <SheetClose asChild>
+                <button
+                  type="button"
+                  aria-label="Close menu"
+                  className="h-10 w-10 -mr-2 flex items-center justify-center rounded-full text-espresso/70 hover:text-espresso hover:bg-espresso/8 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </SheetClose>
+            </div>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+              <form role="search" onSubmit={handleMobileSearch} className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-espresso/50 pointer-events-none" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={mobileSearch}
+                  onChange={(e) => setMobileSearch(e.target.value)}
+                  placeholder="Search gemstones, crystals..."
+                  aria-label="Search products"
+                  enterKeyHint="search"
+                  className="w-full pl-9 pr-4 py-2.5 rounded-full border border-espresso/15 bg-white text-sm text-espresso placeholder:text-espresso/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </form>
+
+              <nav aria-label="Mobile">
+                <ul className="space-y-0.5">
+                  {MOBILE_LINKS.map((l) => {
+                    const active = isActive(l.to, l.exact);
+                    return (
+                      <li key={l.to}>
+                        <Link
+                          to={l.to}
+                          onClick={() => setMobileOpen(false)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                            active
+                              ? 'bg-primary/10 text-primary font-semibold'
+                              : 'text-espresso hover:bg-cream hover:text-primary'
+                          }`}
+                        >
+                          {l.label}
+                          <ChevronRight className={`h-4 w-4 ${active ? 'opacity-60' : 'opacity-25'}`} aria-hidden="true" />
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </nav>
+            </div>
+
+            <div
+              className="shrink-0 border-t border-espresso/10 px-4 pt-3 flex gap-2"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
+              <Link
+                to="/cart"
+                onClick={() => setMobileOpen(false)}
+                className="flex-1 text-center py-2.5 rounded-full border border-espresso/20 text-espresso text-sm font-semibold hover:border-primary hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                Cart {totalItems > 0 && `(${totalItems})`}
+              </Link>
+              <a
+                href={whatsappLink(whatsappNumber)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+              >
+                <WhatsAppIcon />
+                WhatsApp
+              </a>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* Desktop — single combined row */}
         <div className="hidden lg:block">
@@ -153,63 +252,6 @@ export function PublicLayout() {
             onWishlistOpen={() => setWishlistOpen(true)}
           />
         </div>
-
-        {/* Mobile menu */}
-        {mobileOpen && (
-          <div id="mobile-menu" className="lg:hidden bg-white border-b border-espresso/10 shadow-lg">
-            <div className="px-4 py-3 space-y-0.5">
-              {/* Mobile search */}
-              <form onSubmit={handleMobileSearch} className="relative mb-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-espresso/40 pointer-events-none" />
-                <input
-                  type="text"
-                  value={mobileSearch}
-                  onChange={(e) => setMobileSearch(e.target.value)}
-                  placeholder="Search gemstones, crystals..."
-                  className="w-full pl-9 pr-4 py-2.5 rounded-full border border-espresso/15 bg-cream text-sm text-espresso placeholder:text-espresso/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-              </form>
-
-              {MOBILE_LINKS.map((l) => {
-                const active = isActive(l.to, l.exact);
-                return (
-                  <Link
-                    key={l.to + l.label}
-                    to={l.to}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center justify-between px-3 py-3 rounded-xl text-sm font-medium transition-colors ${
-                      active
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-espresso hover:bg-cream hover:text-primary'
-                    }`}
-                  >
-                    {l.label}
-                    <ChevronRight className={`h-4 w-4 ${active ? 'opacity-60' : 'opacity-20'}`} />
-                  </Link>
-                );
-              })}
-
-              <div className="pt-3 mt-1 border-t border-espresso/10 flex gap-2 px-1">
-                <Link
-                  to="/cart"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex-1 text-center py-2.5 rounded-full border border-espresso/20 text-espresso text-sm font-semibold hover:border-primary hover:text-primary transition-colors"
-                >
-                  Cart {totalItems > 0 && `(${totalItems})`}
-                </Link>
-                <a
-                  href={whatsappLink(whatsappNumber)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors"
-                >
-                  <WhatsAppIcon />
-                  WhatsApp
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       <SecondaryNavbar categories={categories} />

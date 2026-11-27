@@ -2,15 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import api from '../../services/apiClient';
-import { useCart } from '../../services/cart';
 import { ProductCard } from '../ui/ProductCard';
 import { SkeletonCard } from '../ui/SkeletonCard';
 import flower from '../../assets/flower.webp';
 
 const SKELETON_COUNT = 7;
 
+/* Colour comes from the text-gold-700 class: lighter golds fail WCAG AA on this light background */
 const EYEBROW_STYLE = {
-  color: '#C9A84C',
   fontSize: '0.72rem',
   fontWeight: 800,
   textTransform: 'uppercase',
@@ -44,7 +43,7 @@ function makeInert(el) {
   if (el) el.setAttribute('inert', '');
 }
 
-function MarqueeCopy({ items, onAddToCart, duplicate = false }) {
+function MarqueeCopy({ items, duplicate = false }) {
   return (
     <ul
       className={`flex shrink-0 gap-5 pr-5 ${duplicate ? 'motion-reduce:hidden' : ''}`}
@@ -55,7 +54,7 @@ function MarqueeCopy({ items, onAddToCart, duplicate = false }) {
         <li key={p.id} className="shrink-0 w-[250px] sm:w-[272px] lg:w-[296px]">
           {p._sk
             ? <SkeletonCard />
-            : <ProductCard product={p} index={i} onAddToCart={onAddToCart} />}
+            : <ProductCard product={p} index={i} />}
         </li>
       ))}
     </ul>
@@ -90,7 +89,6 @@ export function ProductMarquee({
   maxItems = 12,
   showSkeleton = true,
 }) {
-  const { addItem } = useCart();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const paramsKey = JSON.stringify(params || {});
@@ -138,7 +136,7 @@ export function ProductMarquee({
              screens and moves to the right edge only on wide screens, where
              the side padding keeps it clear of the heading ── */}
       <div className="relative text-center mb-10 px-4 lg:px-44">
-        <p style={EYEBROW_STYLE}>{eyebrow}</p>
+        <p className="text-gold-700" style={EYEBROW_STYLE}>{eyebrow}</p>
 
         <h2 id={headingId} style={HEADING_STYLE}>
           {title}
@@ -164,8 +162,8 @@ export function ProductMarquee({
       {/* ── Infinite marquee (shared .bj-marquee classes; pauses on hover/focus) ── */}
       <div className="bj-marquee bj-marquee-mask overflow-hidden">
         <div className="bj-marquee-track" style={{ '--bj-marquee-duration': duration }}>
-          <MarqueeCopy items={items} onAddToCart={addItem} />
-          <MarqueeCopy items={items} onAddToCart={addItem} duplicate />
+          <MarqueeCopy items={items} />
+          <MarqueeCopy items={items} duplicate />
         </div>
       </div>
     </section>

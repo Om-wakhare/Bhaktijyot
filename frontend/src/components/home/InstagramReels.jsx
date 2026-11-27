@@ -164,8 +164,9 @@ export function InstagramReels() {
 
         {/* ── Header ── */}
         <div style={{ textAlign: 'center', marginBottom: 'clamp(2rem,4vw,3rem)' }}>
-          <p style={{
-            color: '#C9A84C', fontSize: '0.68rem', fontWeight: 800,
+          {/* text-gold-700: brighter golds fail WCAG AA contrast on this light background */}
+          <p className="text-gold-700" style={{
+            fontSize: '0.68rem', fontWeight: 800,
             textTransform: 'uppercase', letterSpacing: '0.40em', marginBottom: '0.6rem',
           }}>
             ✦ Follow Our Journey ✦
