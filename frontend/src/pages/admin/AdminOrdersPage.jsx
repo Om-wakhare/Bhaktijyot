@@ -1,221 +1,352 @@
-import { useEffect, useState } from 'react';
-import api from '../../services/apiClient';
-import { Button, Card, Page } from '../../components/admin/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import api, { getErrorMessage } from '../../services/apiClient';
+import {
+  Card, EmptyState, ErrorState, LoadingState, Page, Pagination, Pill, Select, cn,
+} from '../../components/admin/ui';
 import { mediaUrl } from '../../services/media';
+import { useToast } from '../../components/admin/Toast';
+import { useConfirm } from '../../components/admin/ConfirmDialog';
+import {
+  ORDER_FILTER_STATUSES, ORDER_SETTABLE_STATUSES, ORDER_STATUS_RANK, formatDateTime, formatINR,
+  orderStatusMeta, useLatestRequest, whatsappLink,
+} from '../../components/admin/adminUtils';
 
-const STATUS_OPTIONS = ['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled'];
-const STATUS_COLORS = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  paid: 'bg-green-100 text-green-800',
-  processing: 'bg-blue-100 text-blue-800',
-  shipped: 'bg-purple-100 text-purple-800',
-  delivered: 'bg-emerald-100 text-emerald-800',
-  cancelled: 'bg-red-100 text-red-800',
-  failed: 'bg-red-100 text-red-800',
-};
+const LIMIT = 20;
+const RELEASED = new Set(['cancelled', 'abandoned']);
+
+/** Split order notes into customer text and "[system]" lines. */
+function splitNotes(notes) {
+  const lines = String(notes ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return {
+    customer: lines.filter((l) => !l.startsWith('[system]')),
+    system: lines.filter((l) => l.startsWith('[system]')).map((l) => l.replace(/^\[system\]\s*/, '')),
+  };
+}
+
+/** Returns confirm-dialog options when the change needs confirmation, otherwise null. */
+function confirmationFor(order, next) {
+  const from = order.status;
+  const fromLabel = orderStatusMeta(from).label;
+  const toLabel = orderStatusMeta(next).label;
+  if (next === 'cancelled') {
+    return {
+      title: `Cancel order #${order.id}?`,
+      message:
+        'Reserved stock will be released back to inventory.' +
+        (['paid', 'processing', 'shipped', 'delivered'].includes(from)
+          ? ' This does not refund the customer — issue any refund from the Razorpay dashboard.'
+          : ''),
+      confirmLabel: 'Cancel order',
+      cancelLabel: 'Keep order',
+      tone: 'danger',
+    };
+  }
+  if (RELEASED.has(from)) {
+    return {
+      title: `Reopen order #${order.id} as “${toLabel}”?`,
+      message: `This order is “${fromLabel}”. Moving it back to an active status reserves its stock again (it fails if there isn't enough stock left).`,
+      confirmLabel: `Set to ${toLabel}`,
+    };
+  }
+  const a = ORDER_STATUS_RANK[from];
+  const b = ORDER_STATUS_RANK[next];
+  if (a !== undefined && b !== undefined && b < a) {
+    return {
+      title: `Move order #${order.id} back to “${toLabel}”?`,
+      message: `It is currently “${fromLabel}”. Moving an order backwards is unusual — make sure this is intended.`,
+      confirmLabel: `Set to ${toLabel}`,
+    };
+  }
+  return null;
+}
 
 export function AdminOrdersPage() {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [limit] = useState(20);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [expandedId, setExpandedId] = useState(null);
-  const [updating, setUpdating] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const beginRequest = useLatestRequest();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const loadOrders = async () => {
+  // Filter + page live in the URL (?status=paid&page=2) so dashboard links and the back button work
+  const rawStatus = searchParams.get('status') || '';
+  const statusFilter = ORDER_FILTER_STATUSES.includes(rawStatus) ? rawStatus : '';
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+
+  const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [updatingId, setUpdatingId] = useState(null);
+
+  const loadOrders = useCallback(async () => {
+    const isCurrent = beginRequest();
     setLoading(true);
+    setLoadError('');
     try {
-      const params = { page, limit };
+      const params = { page, limit: LIMIT };
       if (statusFilter) params.status_filter = statusFilter;
       const res = await api.get('/orders', { params });
-      setOrders(res.data.items || []);
-      setTotal(res.data.total || 0);
-    } catch {
-      setOrders([]);
+      if (!isCurrent()) return;
+      const items = res.data?.items || [];
+      const nextTotal = res.data?.total || 0;
+      // Past the last page (e.g. the only order on it moved to another status) — go to the last page
+      if (!items.length && page > 1 && nextTotal > 0) {
+        const last = Math.max(1, Math.ceil(nextTotal / LIMIT));
+        const next = {};
+        if (statusFilter) next.status = statusFilter;
+        if (last > 1) next.page = String(last);
+        setSearchParams(next, { replace: true });
+        return;
+      }
+      setOrders(items);
+      setTotal(nextTotal);
+    } catch (err) {
+      if (isCurrent()) setLoadError(getErrorMessage(err, 'Could not load orders.'));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
+  }, [page, statusFilter, beginRequest, setSearchParams]);
+
+  useEffect(() => { loadOrders(); }, [loadOrders]);
+
+  const setFilter = (s) => {
+    setExpandedId(null);
+    setSearchParams(s ? { status: s } : {});
   };
 
-  useEffect(() => {
-    loadOrders();
-  }, [page, statusFilter]);
+  const setPage = (p) => {
+    const next = {};
+    if (statusFilter) next.status = statusFilter;
+    if (p > 1) next.page = String(p);
+    setSearchParams(next);
+  };
 
-  const handleStatusChange = async (orderId, newStatus) => {
-    setUpdating(true);
+  const handleStatusChange = async (order, next) => {
+    if (!next || next === order.status) return;
+    const dialog = confirmationFor(order, next);
+    if (dialog && !(await confirm(dialog))) return;
+    setUpdatingId(order.id);
     try {
-      await api.put(`/orders/${orderId}/status`, { status: newStatus });
+      const res = await api.put(`/orders/${order.id}/status`, { status: next });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...res.data } : o)));
+      toast.success(`Order #${order.id} is now ${orderStatusMeta(next).label.toLowerCase()}`);
+      // Refresh so filtered views and totals stay accurate
       loadOrders();
     } catch (err) {
-      alert(err?.response?.data?.detail || 'Failed to update status');
+      // e.g. 409 when there isn't enough stock to re-reserve
+      toast.error(getErrorMessage(err, 'Failed to update the order status.'));
     } finally {
-      setUpdating(false);
+      setUpdatingId(null);
     }
   };
 
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+  const filterMeta = statusFilter ? orderStatusMeta(statusFilter) : null;
 
   return (
-    <Page title="Orders" subtitle={`${total} total orders`}>
+    <Page
+      title="Orders"
+      description={
+        loading && !orders.length
+          ? 'Loading…'
+          : `${total} ${filterMeta ? `“${filterMeta.label}” ` : ''}order${total !== 1 ? 's' : ''}`
+      }
+    >
       <Card>
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <span className="text-xs font-semibold text-gray-600">Filter:</span>
-          <button
-            type="button"
-            onClick={() => { setStatusFilter(''); setPage(1); }}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
-              !statusFilter ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            All
-          </button>
-          {STATUS_OPTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => { setStatusFilter(s); setPage(1); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold border capitalize ${
-                statusFilter === s ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+          <span className="text-xs font-semibold text-espresso/70">Filter:</span>
+          {[''].concat(ORDER_FILTER_STATUSES).map((s) => {
+            const active = statusFilter === s;
+            return (
+              <button
+                key={s || 'all'}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setFilter(s)}
+                className={cn(
+                  'min-h-[36px] px-3 py-1.5 rounded-full text-xs font-semibold border',
+                  active
+                    ? 'bg-primary text-white border-primary'
+                    : s === 'abandoned'
+                      ? 'border-espresso/10 text-espresso/60 hover:bg-espresso/5'
+                      : 'border-espresso/20 text-espresso/80 hover:bg-espresso/5',
+                )}
+              >
+                {s ? orderStatusMeta(s).label : 'All'}
+              </button>
+            );
+          })}
         </div>
 
-        {loading ? (
-          <div className="text-sm text-gray-500 py-8 text-center">Loading orders...</div>
+        {loading && !orders.length ? (
+          <LoadingState label="Loading orders…" />
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={loadOrders} />
         ) : orders.length === 0 ? (
-          <div className="text-sm text-gray-500 py-8 text-center">No orders found.</div>
+          <EmptyState>{statusFilter ? 'No orders with this status.' : 'No orders yet.'}</EmptyState>
         ) : (
-          <div className="space-y-3">
-            {orders.map((order) => (
-              <div key={order.id} className="border border-gray-200 rounded-xl overflow-hidden">
-                {/* Order Header */}
-                <button
-                  type="button"
-                  onClick={() => setExpandedId(expandedId === order.id ? null : order.id)}
-                  className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-4 flex-wrap min-w-0">
-                    <span className="text-sm font-bold text-gray-900">#{order.id}</span>
-                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                      {order.status}
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      ₹ {Number(order.total_amount).toLocaleString('en-IN')}
-                    </span>
-                    <span className="text-xs text-gray-500">{order.customer_name}</span>
-                    <span className="text-xs text-gray-500">{new Date(order.created_at).toLocaleString()}</span>
-                  </div>
-                  <span className="text-gray-400 shrink-0">{expandedId === order.id ? '▲' : '▼'}</span>
-                </button>
-
-                {/* Order Details (expanded) */}
-                {expandedId === order.id && (
-                  <div className="px-4 py-4 space-y-4 border-t border-gray-200">
-                    {/* Customer Info */}
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <div className="text-xs font-semibold text-gray-500 mb-1">Customer</div>
-                        <div className="text-sm text-gray-900">{order.customer_name}</div>
-                        <div className="text-xs text-gray-600">{order.customer_phone}</div>
-                        {order.customer_email && <div className="text-xs text-gray-600">{order.customer_email}</div>}
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-gray-500 mb-1">Shipping Address</div>
-                        <div className="text-sm text-gray-900">{order.customer_address}</div>
-                        <div className="text-xs text-gray-600">
-                          {order.customer_city}, {order.customer_state} — {order.customer_pincode}
-                        </div>
-                      </div>
+          <div className={cn('space-y-3', loading && 'opacity-60 transition-opacity')}>
+            {orders.map((order) => {
+              const meta = orderStatusMeta(order.status);
+              const expanded = expandedId === order.id;
+              const notes = splitNotes(order.notes);
+              const items = order.items ?? [];
+              const panelId = `order-panel-${order.id}`;
+              return (
+                <div key={order.id} className="border border-espresso/10 rounded-xl overflow-hidden">
+                  {/* Order header */}
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-controls={panelId}
+                    onClick={() => setExpandedId(expanded ? null : order.id)}
+                    className="w-full text-left px-4 py-3 bg-ivory hover:bg-espresso/5 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-x-4 gap-y-1 flex-wrap min-w-0">
+                      <span className="text-sm font-bold text-espresso">#{order.id}</span>
+                      <Pill className={cn('uppercase tracking-wide', meta.className)}>{meta.label}</Pill>
+                      <span className={cn('text-sm font-semibold', order.status === 'abandoned' ? 'text-espresso/60' : 'text-espresso')}>
+                        {formatINR(order.total_amount)}
+                      </span>
+                      <span className="text-xs text-espresso/60">{order.customer_name}</span>
+                      <span className="text-xs text-espresso/60">{formatDateTime(order.created_at)}</span>
+                      {notes.system.length > 0 && (
+                        <span className="text-[11px] font-semibold text-gold-700">system note</span>
+                      )}
                     </div>
+                    <span className="text-espresso/60 shrink-0" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
+                  </button>
 
-                    {/* Payment Info */}
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 mb-1">Payment</div>
-                      <div className="text-xs text-gray-700 space-y-0.5">
-                        {order.razorpay_order_id && <div>Razorpay Order: <span className="font-mono">{order.razorpay_order_id}</span></div>}
-                        {order.razorpay_payment_id && <div>Payment ID: <span className="font-mono">{order.razorpay_payment_id}</span></div>}
-                      </div>
-                    </div>
-
-                    {order.notes && (
-                      <div>
-                        <div className="text-xs font-semibold text-gray-500 mb-1">Notes</div>
-                        <div className="text-sm text-gray-700">{order.notes}</div>
-                      </div>
-                    )}
-
-                    {/* Items */}
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 mb-2">Items ({order.items.length})</div>
-                      <div className="space-y-2">
-                        {order.items.map((item) => (
-                          <div key={item.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-2">
-                            <div className="h-12 w-12 rounded-md bg-gray-200 overflow-hidden shrink-0">
-                              {item.product_image_path ? (
-                                <img src={mediaUrl(item.product_image_path)} alt="" className="h-full w-full object-cover" />
-                              ) : (
-                                <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400">—</div>
+                  {/* Order details */}
+                  {expanded && (
+                    <div id={panelId} className="px-4 py-4 space-y-4 border-t border-espresso/10">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Customer</div>
+                          <div className="text-sm text-espresso">{order.customer_name}</div>
+                          {order.customer_phone && (
+                            <div className="flex flex-wrap items-center gap-x-3 text-xs">
+                              <a href={`tel:${order.customer_phone}`} className="font-semibold text-primary hover:underline">
+                                {order.customer_phone}
+                              </a>
+                              {whatsappLink(order.customer_phone) && (
+                                <a
+                                  href={whatsappLink(order.customer_phone)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-semibold text-emerald-800 hover:underline"
+                                >
+                                  WhatsApp
+                                </a>
                               )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-semibold text-gray-900 truncate">{item.product_name}</div>
-                              <div className="text-xs text-gray-600">
-                                ₹ {Number(item.price).toLocaleString('en-IN')} × {item.quantity}
-                                {' = '}
-                                <span className="font-semibold">₹ {(Number(item.price) * item.quantity).toLocaleString('en-IN')}</span>
+                          )}
+                          {order.customer_email && <div className="text-xs text-espresso/70">{order.customer_email}</div>}
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Shipping Address</div>
+                          <div className="text-sm text-espresso">{order.customer_address}</div>
+                          <div className="text-xs text-espresso/70">
+                            {[order.customer_city, order.customer_state].filter(Boolean).join(', ')}
+                            {order.customer_pincode ? ` — ${order.customer_pincode}` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      {(order.razorpay_order_id || order.razorpay_payment_id) && (
+                        <div>
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Payment</div>
+                          <div className="text-xs text-espresso/80 space-y-0.5">
+                            {order.razorpay_order_id && <div>Razorpay Order: <span className="font-mono">{order.razorpay_order_id}</span></div>}
+                            {order.razorpay_payment_id && <div>Payment ID: <span className="font-mono">{order.razorpay_payment_id}</span></div>}
+                          </div>
+                        </div>
+                      )}
+
+                      {notes.customer.length > 0 && (
+                        <div>
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Note from the customer</div>
+                          <div className="text-sm text-espresso/80 whitespace-pre-line">{notes.customer.join('\n')}</div>
+                        </div>
+                      )}
+
+                      {notes.system.length > 0 && (
+                        <div className="rounded-lg border border-gold-200 bg-gold-50 px-3 py-2">
+                          <div className="text-xs font-semibold text-gold-800 mb-1">System notes (added automatically)</div>
+                          <ul className="text-xs text-gold-900 space-y-0.5 list-disc pl-4">
+                            {notes.system.map((line, i) => <li key={i}>{line}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Items */}
+                      <div>
+                        <div className="text-xs font-semibold text-espresso/60 mb-2">Items ({items.length})</div>
+                        <div className="space-y-2">
+                          {items.map((item) => (
+                            <div key={item.id} className="flex items-center gap-3 bg-ivory rounded-lg p-2">
+                              <div className="h-12 w-12 rounded-md bg-espresso/10 overflow-hidden shrink-0">
+                                {item.product_image_path ? (
+                                  <img src={mediaUrl(item.product_image_path)} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="h-full w-full flex items-center justify-center text-[10px] text-espresso/60">—</div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-espresso truncate">{item.product_name}</div>
+                                <div className="text-xs text-espresso/70">
+                                  {formatINR(item.price)} × {item.quantity}
+                                  {' = '}
+                                  <span className="font-semibold">{formatINR(Number(item.price) * item.quantity)}</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Update status */}
+                      <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-espresso/10">
+                        <label htmlFor={`status-${order.id}`} className="text-xs font-semibold text-espresso/70">
+                          Status:
+                        </label>
+                        <Select
+                          id={`status-${order.id}`}
+                          value={order.status}
+                          disabled={updatingId === order.id}
+                          onChange={(e) => handleStatusChange(order, e.target.value)}
+                          className="w-auto min-w-[180px]"
+                        >
+                          {!ORDER_SETTABLE_STATUSES.includes(order.status) && (
+                            <option value={order.status} disabled>{meta.label}</option>
+                          )}
+                          {ORDER_SETTABLE_STATUSES.map((s) => (
+                            <option key={s} value={s}>{orderStatusMeta(s).label}</option>
+                          ))}
+                        </Select>
+                        {updatingId === order.id && <span className="text-xs text-espresso/60">Updating…</span>}
+                        {order.status === 'abandoned' && (
+                          <span className="text-[11px] text-espresso/60">
+                            The customer didn’t finish paying. Set a status only if you received payment another way.
+                          </span>
+                        )}
                       </div>
                     </div>
-
-                    {/* Update Status */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
-                      <span className="text-xs font-semibold text-gray-600">Update status:</span>
-                      {STATUS_OPTIONS.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          disabled={updating || order.status === s}
-                          onClick={() => handleStatusChange(order.id, s)}
-                          className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold capitalize ${
-                            order.status === s
-                              ? 'bg-primary text-white cursor-default'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50'
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-              Previous
-            </Button>
-            <span className="text-xs text-gray-600">
-              Page {page} of {totalPages}
-            </span>
-            <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-              Next
-            </Button>
-          </div>
-        )}
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          disabled={loading}
+        />
       </Card>
     </Page>
   );

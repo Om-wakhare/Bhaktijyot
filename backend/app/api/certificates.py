@@ -1,10 +1,13 @@
+import io
 import json
+import re
 import uuid
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import or_
+from fastapi.concurrency import run_in_threadpool
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -13,27 +16,39 @@ from app.db.session import get_db
 from app.models.certificate import Certificate
 from app.schemas.certificate import CertificateListResponse, CertificateRead
 from app.services.certificate_renderer import generate_certificate_image
+from app.services.storage import delete_public_file, is_inside, public_path, public_to_disk
 
 router = APIRouter(prefix="/certificates", tags=["certificates"])
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+MAX_TEMPLATE_BYTES = 15 * 1024 * 1024
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,79}$")
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _delete_static_file(public_path: Optional[str]) -> None:
-    if not public_path:
-        return
+def _safe_template_name(name: str) -> str:
+    """Template names become file names: letters, digits, spaces, '-' and '_' only."""
+    cleaned = re.sub(r"[^A-Za-z0-9 _-]+", "-", (name or "").strip()).strip(" -_")[:80]
+    if not cleaned or not _SAFE_NAME.match(cleaned):
+        raise HTTPException(400, "Template name must use letters, numbers, spaces, hyphens or underscores.")
+    return cleaned
+
+
+def _check_image_bytes(content: bytes, max_bytes: int, what: str) -> None:
+    if len(content) > max_bytes:
+        raise HTTPException(400, f"{what} is too large (max {max_bytes // (1024 * 1024)} MB).")
     try:
-        disk_path = settings.BASE_DIR / public_path
-        if disk_path.exists() and disk_path.is_file():
-            disk_path.unlink()
-    except Exception:
-        return
+        Image.open(io.BytesIO(content)).verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise HTTPException(400, f"{what} is not a readable image.")
 
 
 def _find_template(name: str) -> Optional[Path]:
     """Return the Path for a stored template by stem name, or None."""
+    if not name or not _SAFE_NAME.match(name):
+        return None
     d = settings.CERT_TEMPLATES_DIR
     for ext in _IMAGE_EXTS:
         candidate = d / f"{name}{ext}"
@@ -73,7 +88,9 @@ async def upload_template(
     if ext not in _IMAGE_EXTS:
         raise HTTPException(400, "Only png / jpg / jpeg / webp files are accepted")
 
-    stem = Path(file.filename).stem
+    stem = _safe_template_name(Path(file.filename).stem)
+    content = await file.read(MAX_TEMPLATE_BYTES + 1)
+    _check_image_bytes(content, MAX_TEMPLATE_BYTES, "Template")
     d = settings.CERT_TEMPLATES_DIR
     d.mkdir(parents=True, exist_ok=True)
 
@@ -84,8 +101,7 @@ async def upload_template(
             old.unlink()
 
     dest = d / f"{stem}{ext}"
-    with dest.open("wb") as fout:
-        fout.write(await file.read())
+    dest.write_bytes(content)
 
     return {"name": stem, "filename": dest.name, "url": f"static/uploads/cert_templates/{dest.name}"}
 
@@ -130,15 +146,18 @@ async def create_certificate(
     # Save optional gemstone photo
     product_image_path: Optional[Path] = None
     product_rel_path: Optional[str] = None
-    if product_image is not None:
+    if product_image is not None and product_image.filename:
+        prod_ext = Path(product_image.filename).suffix.lower()
+        if prod_ext not in _IMAGE_EXTS:
+            raise HTTPException(400, "Gemstone photo must be a PNG, JPG or WebP image.")
+        content = await product_image.read(MAX_PHOTO_BYTES + 1)
+        _check_image_bytes(content, MAX_PHOTO_BYTES, "Gemstone photo")
         prod_dir = settings.UPLOAD_DIR / settings.PRODUCT_SUBDIR
         prod_dir.mkdir(parents=True, exist_ok=True)
-        prod_ext = Path(product_image.filename).suffix.lstrip(".") if product_image.filename else "png"
-        prod_filename = f"cert_product_{uuid.uuid4().hex[:12]}.{prod_ext}"
+        prod_filename = f"cert_product_{uuid.uuid4().hex[:12]}{prod_ext}"
         product_image_path = prod_dir / prod_filename
-        with product_image_path.open("wb") as fout:
-            fout.write(await product_image.read())
-        product_rel_path = str(PurePosixPath("static") / "uploads" / settings.PRODUCT_SUBDIR / prod_filename)
+        product_image_path.write_bytes(content)
+        product_rel_path = public_path("uploads", settings.PRODUCT_SUBDIR, prod_filename)
 
     # Parse structured fields
     parsed_data: Optional[Dict[str, Any]] = None
@@ -149,13 +168,25 @@ async def create_certificate(
                 parsed_data = parsed
         except json.JSONDecodeError:
             raise HTTPException(400, "certificate_data must be a valid JSON object")
+    # A QR image may only come from our own uploads folder, never an arbitrary server path.
+    # The renderer gets the disk path; what we store (and show publicly) keeps the public path.
+    render_data = dict(parsed_data) if parsed_data else None
+    if parsed_data and parsed_data.get("qr_image_path"):
+        qr = public_to_disk(str(parsed_data["qr_image_path"]))
+        if qr is None or not is_inside(qr, settings.UPLOAD_DIR) or not qr.is_file():
+            parsed_data.pop("qr_image_path", None)
+            render_data.pop("qr_image_path", None)
+        else:
+            render_data["qr_image_path"] = str(qr)
 
     certificate_code = uuid.uuid4().hex[:10].upper()
 
-    certificate_code, generated_rel_path = generate_certificate_image(
+    # Pillow renders a 300-DPI A4 image + PDF: run it off the event loop
+    certificate_code, generated_rel_path = await run_in_threadpool(
+        generate_certificate_image,
         background_path=bg_path,
         product_image_path=product_image_path,
-        certificate_data=parsed_data,
+        certificate_data=render_data,
         free_text=free_text,
         certificate_code=certificate_code,
     )
@@ -178,7 +209,9 @@ async def create_certificate(
 
 @router.get("/verify/{certificate_code}", response_model=CertificateRead)
 def verify_certificate(certificate_code: str, db: Session = Depends(get_db)):
-    cert = db.query(Certificate).filter(Certificate.certificate_code == certificate_code).first()
+    # Codes are issued in upper case; accept whatever case customers type
+    code = certificate_code.strip().upper()
+    cert = db.query(Certificate).filter(Certificate.certificate_code == code).first()
     if not cert:
         raise HTTPException(404, "Certificate not found")
     return cert
@@ -200,9 +233,8 @@ def admin_list_certificates(
         raise HTTPException(400, "limit must be between 1 and 100")
 
     query = db.query(Certificate)
-    if search:
-        s = f"%{search.strip()}%"
-        query = query.filter(Certificate.certificate_code.ilike(s))
+    if search and search.strip():
+        query = query.filter(Certificate.certificate_code.ilike(f"%{search.strip()}%"))
 
     total = query.count()
     items = (
@@ -243,8 +275,10 @@ def admin_delete_certificate(
     db.delete(cert)
     db.commit()
 
-    _delete_static_file(prod_path)
-    _delete_static_file(gen_path)
+    delete_public_file(prod_path)
+    delete_public_file(gen_path)
+    if gen_path and gen_path.endswith(".png"):
+        delete_public_file(gen_path[:-4] + ".pdf")  # the renderer writes a PDF beside the PNG
     # Do NOT delete the template (bg_path) — it's shared across certificates
 
     return None

@@ -3,6 +3,33 @@
 @tailwind utilities;
 
 @layer base {
+  /* shadcn/ui semantic tokens, mapped onto the Bhaktijyot palette
+     (cream #F4E4D1, ivory #FAF3EC, espresso #1C1209, forest #1D3D2C).
+     HSL triplets without hsl() so Tailwind can apply opacity (bg-muted/50).
+     All text pairings meet WCAG AA (≥ 5.3:1). */
+  :root {
+    --background: 33 61.4% 88.8%;
+    --foreground: 28 51.4% 7.3%;
+    --card: 30 58.3% 95.3%;
+    --card-foreground: 28 51.4% 7.3%;
+    --popover: 38 100% 98.4%;
+    --popover-foreground: 28 51.4% 7.3%;
+    --primary: 148 35.6% 17.6%;
+    --primary-foreground: 30 58.3% 95.3%;
+    --secondary: 36 47.8% 86.5%;
+    --secondary-foreground: 28 51.4% 7.3%;
+    --muted: 36 50% 87.5%;
+    --muted-foreground: 31 23% 34.1%;
+    --accent: 36 50.6% 82.5%;
+    --accent-foreground: 28 51.4% 7.3%;
+    --destructive: 4 76.5% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 36 46.7% 79.4%;
+    --input: 36 44.5% 73.1%;
+    --ring: 148 35.6% 17.6%;
+    --radius: 0.5rem;
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -21,21 +48,64 @@
   }
 }
 
-@keyframes shimmer {
+/* Named bj-shimmer so it never collides with Tailwind's `shimmer` keyframes */
+@keyframes bj-shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* Shared marquee keyframes — use these instead of re-declaring per component */
+@keyframes bj-marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes bj-marquee-reverse {
+  0%   { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
 }
 
 @layer utilities {
   .shimmer-bg {
     background: linear-gradient(90deg, #F4E4D1 25%, #E8CAA8 50%, #F4E4D1 75%);
     background-size: 200% 100%;
-    animation: shimmer 1.5s linear infinite;
+    animation: bj-shimmer 1.5s linear infinite;
   }
 
   .font-display {
     font-family: 'Playfair Display', Georgia, serif;
   }
+
+  /* Horizontal marquee track: render the item list twice inside it.
+     Pauses on hover/focus; the duplicate copy should be aria-hidden. */
+  .bj-marquee-track {
+    display: flex;
+    width: max-content;
+    animation: bj-marquee var(--bj-marquee-duration, 40s) linear infinite;
+  }
+  .bj-marquee-track.bj-marquee-reverse {
+    animation-name: bj-marquee-reverse;
+  }
+  .bj-marquee:hover .bj-marquee-track,
+  .bj-marquee:focus-within .bj-marquee-track {
+    animation-play-state: paused;
+  }
+  /* Soft fade at both edges of a marquee viewport */
+  .bj-marquee-mask {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+            mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  }
+}
+
+/* Respect the OS "reduce motion" setting everywhere */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .bj-marquee-track { animation: none !important; }
+  .bj-marquee { overflow-x: auto; }
 }
 
 /* ── ProductCard shared styles (rendered once globally, not per-card) ── */
@@ -70,18 +140,29 @@
   transition: background 0.2s, transform 0.2s, color 0.2s;
 }
 .bj-wish-btn:hover { transform: scale(1.12); }
-.bj-wish-btn[aria-label="Remove from wishlist"] { background: #1D3D2C; }
+.bj-wish-btn[aria-pressed="true"] { background: #1D3D2C; }
+.bj-wish-btn:focus-visible,
+.bj-cta:focus-visible { outline: 2px solid #1D3D2C; outline-offset: 2px; }
+.bj-quick-btn:focus-visible { outline: 2px solid #E5D090; outline-offset: 2px; }
 
+/* Quick-add overlay: only on devices that can hover. While hidden it must not
+   intercept taps, otherwise touching the image adds to cart by accident. */
 .bj-quick-wrap {
   position: absolute; bottom: 0; left: 0; right: 0; z-index: 2;
   padding: 40px 12px 12px;
   background: linear-gradient(to top, rgba(22,10,4,0.84), transparent);
-  display: flex; justify-content: center;
+  display: none; justify-content: center;
   opacity: 0; transform: translateY(6px);
+  pointer-events: none;
   transition: opacity 0.26s ease, transform 0.26s ease;
 }
-.bj-card:hover .bj-quick-wrap {
-  opacity: 1; transform: translateY(0);
+@media (hover: hover) and (pointer: fine) {
+  .bj-quick-wrap { display: flex; }
+  .bj-card:hover .bj-quick-wrap,
+  .bj-card:focus-within .bj-quick-wrap {
+    opacity: 1; transform: translateY(0);
+    pointer-events: auto;
+  }
 }
 .bj-quick-btn {
   display: flex; align-items: center; gap: 6px;

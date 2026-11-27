@@ -1,10 +1,10 @@
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
-import catIdols     from '../../assets/cat-idols.png';
-import catDiya      from '../../assets/cat-diya.png';
-import catRudraksha from '../../assets/cat-rudraksha.png';
-import catPooja     from '../../assets/cat-pooja.png';
-import flower       from '../../assets/flower.png';
+import catIdols     from '../../assets/cat-idols.webp';
+import catDiya      from '../../assets/cat-diya.webp';
+import catRudraksha from '../../assets/cat-rudraksha.webp';
+import catPooja     from '../../assets/cat-pooja.webp';
+import flower       from '../../assets/flower.webp';
 
 const CATEGORIES = [
   { key: 'idol',      label: 'Idols',            to: '/products?q=idol',      image: catIdols },
@@ -14,11 +14,6 @@ const CATEGORIES = [
 ];
 
 export function ThreeWorldCards() {
-  const [searchParams] = useSearchParams();
-  const activeQ     = searchParams.get('q')     || '';
-  const activeWorld = searchParams.get('world') || '';
-  const isActive    = (cat) => activeQ === cat.key || activeWorld === cat.key;
-
   return (
     <section style={{ backgroundColor: '#F4E4D1' }} className="pt-8 pb-6 px-4 sm:px-8 lg:px-16">
 
@@ -30,7 +25,7 @@ export function ThreeWorldCards() {
         >
           Shop Daily Pooja Essentials
         </h2>
-        <p className="mt-1 text-sm font-medium" style={{ color: 'rgba(28,18,9,0.45)', fontStyle: 'italic' }}>
+        <p className="mt-1 text-sm font-medium" style={{ color: 'rgba(28,18,9,0.62)', fontStyle: 'italic' }}>
           I'd like to browse for...
         </p>
         <img
@@ -44,7 +39,6 @@ export function ThreeWorldCards() {
       {/* 4 cards — full image with text overlay */}
       <div className="max-w-screen-lg mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
         {CATEGORIES.map((cat) => {
-          const active = isActive(cat);
           return (
             <Link
               key={cat.key}
@@ -52,20 +46,21 @@ export function ThreeWorldCards() {
               className="group relative overflow-hidden rounded-2xl block transition-all duration-300 hover:-translate-y-1.5"
               style={{
                 paddingBottom: '130%',
-                boxShadow: active
-                  ? '0 0 0 3px #1D3D2C, 0 8px 28px rgba(28,18,9,0.2)'
-                  : '0 3px 18px rgba(28,18,9,0.12)',
+                boxShadow: '0 3px 18px rgba(28,18,9,0.12)',
               }}
             >
-              {/* Full image */}
+              {/* Full image — decorative; the visible label names the link */}
               <img
                 src={cat.image}
-                alt={cat.label}
+                alt=""
+                loading="lazy"
+                decoding="async"
                 className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
               />
 
               {/* Bottom gradient overlay for text readability */}
               <div
+                aria-hidden="true"
                 className="absolute inset-x-0 bottom-0"
                 style={{
                   height:     '45%',

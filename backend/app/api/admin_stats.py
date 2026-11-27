@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, date, timezone
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_current_admin
+from app.core.validators import IST
 from app.db.session import get_db
 from app.models.category import Category
+from app.models.consultation import Consultation
 from app.models.order import Order
 from app.models.product import Product
+from app.models.review import Review
 from app.schemas.order import OrderRead
 
 router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
@@ -25,9 +28,14 @@ def get_admin_stats(
     """Admin dashboard statistics."""
 
     # ── Orders & Revenue ────────────────────────────────────────
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    # The business runs on Indian time: "today" starts at midnight IST, not UTC
+    today_start = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = today_start.replace(day=1)
 
-    total_orders: int = db.query(func.count(Order.id)).scalar() or 0
+    # Checkouts where payment never completed are not real orders
+    total_orders: int = (
+        db.query(func.count(Order.id)).filter(Order.status != "abandoned").scalar() or 0
+    )
 
     # Revenue — only count paid / processing / shipped / delivered
     paid_statuses = ("paid", "processing", "shipped", "delivered")
@@ -49,8 +57,6 @@ def get_admin_stats(
     )
 
     # This month
-    first_of_month = date.today().replace(day=1)
-    month_start = datetime.combine(first_of_month, datetime.min.time())
     revenue_month: float = float(
         db.query(func.sum(Order.total_amount))
         .filter(
@@ -74,7 +80,7 @@ def get_admin_stats(
 
     low_stock_products = (
         db.query(Product)
-        .filter(Product.stock != -1, Product.stock <= 5)
+        .filter(Product.stock != -1, Product.stock <= 5, Product.is_active.isnot(False))
         .order_by(Product.stock.asc())
         .limit(10)
         .all()
@@ -87,10 +93,20 @@ def get_admin_stats(
     # ── Categories ──────────────────────────────────────────────
     total_categories: int = db.query(func.count(Category.id)).scalar() or 0
 
+    # ── Consultations & reviews awaiting attention ─────────────
+    consult_new: int = (
+        db.query(func.count(Consultation.id)).filter(Consultation.status == "new").scalar() or 0
+    )
+    consult_total: int = db.query(func.count(Consultation.id)).scalar() or 0
+    reviews_pending: int = (
+        db.query(func.count(Review.id)).filter(Review.is_approved.is_(False)).scalar() or 0
+    )
+
     # ── Recent Orders ────────────────────────────────────────────
     recent_orders_orm = (
         db.query(Order)
         .options(selectinload(Order.items))
+        .filter(Order.status != "abandoned")
         .order_by(Order.created_at.desc())
         .limit(5)
         .all()
@@ -112,6 +128,13 @@ def get_admin_stats(
         },
         "categories": {
             "total": total_categories,
+        },
+        "consultations": {
+            "new": consult_new,
+            "total": consult_total,
+        },
+        "reviews": {
+            "pending": reviews_pending,
         },
         "recent_orders": [o.model_dump() for o in recent_orders],
     }

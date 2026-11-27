@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.validators import utcnow
 from app.db.session import Base
 
 
@@ -31,6 +32,6 @@ class Review(Base):
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     is_verified_offline: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     product = relationship("Product")

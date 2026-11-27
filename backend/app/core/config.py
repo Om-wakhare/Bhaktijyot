@@ -35,13 +35,27 @@ class Settings(BaseSettings):
     # Razorpay
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
+    # Secret configured on the Razorpay Dashboard → Webhooks. Required for
+    # POST /api/orders/razorpay-webhook (payment.captured / order.paid events).
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
+    # Stock is reserved when checkout starts. If payment isn't completed within
+    # this window the order becomes "abandoned" and the stock is released.
+    ORDER_RESERVATION_MINUTES: int = 30
+    # How often the background job looks for expired reservations
+    RESERVATION_SWEEP_SECONDS: int = 300
 
     # Instagram Graph API
     INSTAGRAM_ACCESS_TOKEN: str = ""
     INSTAGRAM_CACHE_TTL: int = 1800  # 30 minutes
 
-    # CORS — set to your Vercel domain in production
-    CORS_ORIGINS: list[str] = ["*"]
+    # CORS — extra allowed frontend origins (JSON array). The production Vercel
+    # domain is always allowed (see main.py). Never use "*" in production.
+    CORS_ORIGINS: list[str] = []
+
+    # Admin login brute-force protection
+    LOGIN_MAX_FAILURES: int = 10
+    LOGIN_WINDOW_SECONDS: int = 900
 
     # Storage paths — override via env vars to point at a Railway volume
     # e.g. UPLOAD_DIR=/app/data/uploads  GENERATED_DIR=/app/data/generated

@@ -1,92 +1,196 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle, Trash2, BadgeCheck, RefreshCw } from 'lucide-react';
-import api from '../../services/apiClient';
+import api, { getErrorMessage } from '../../services/apiClient';
 import { StarRating } from '../../components/ui/StarRating';
+import {
+  Button, Card, EmptyState, ErrorState, LoadingState, Page, Pagination, Pill, Tabs, cn,
+} from '../../components/admin/ui';
+import { useToast } from '../../components/admin/Toast';
+import { useConfirm } from '../../components/admin/ConfirmDialog';
+import { formatDate, notifyAdminCountsChanged, useLatestRequest } from '../../components/admin/adminUtils';
 
 const LIMIT = 20;
 
 function StatusPill({ approved }) {
   return approved ? (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700">
-      Approved
-    </span>
+    <Pill className="uppercase tracking-wider text-[10px] bg-emerald-100 text-emerald-700">Approved</Pill>
   ) : (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700">
-      Pending
-    </span>
+    <Pill className="uppercase tracking-wider text-[10px] bg-amber-100 text-amber-700">Pending</Pill>
   );
 }
 
-function ActionBtn({ onClick, disabled, title, children, danger }) {
+const COMMENT_PREVIEW = 240;
+
+/** One review: full details readable on a phone, with labelled actions. */
+function ReviewItem({ review, busy, onApprove, onVerify, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  const name = review.reviewer_name || 'Anonymous';
+  const comment = review.comment || '';
+  const long = comment.length > COMMENT_PREVIEW;
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={`p-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-        danger
-          ? 'text-red-400 hover:text-red-600 hover:bg-red-50'
-          : 'text-stone-400 hover:text-primary hover:bg-primary/8'
-      }`}
-    >
-      {children}
-    </button>
+    <li className="px-4 sm:px-5 py-4 space-y-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div
+            className="h-9 w-9 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[11px] font-bold shrink-0"
+            aria-hidden="true"
+          >
+            {name.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="text-sm font-semibold text-espresso">{name}</span>
+              <StatusPill approved={review.is_approved} />
+              {review.is_verified_offline && (
+                <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary">
+                  <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Verified purchase
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-espresso/60 break-all">
+              {[review.reviewer_phone, review.reviewer_email].filter(Boolean).join(' · ') || 'No contact details given'}
+            </div>
+          </div>
+        </div>
+        <span className="text-xs text-espresso/60 whitespace-nowrap">{formatDate(review.created_at)}</span>
+      </div>
+
+      <div className="text-xs text-espresso/70">
+        On{' '}
+        <span className="font-semibold text-espresso">{review.product_name || `Product #${review.product_id}`}</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <StarRating value={review.rating} size="sm" />
+        <span className="text-xs text-espresso/60">{review.rating} out of 5</span>
+      </div>
+
+      <div>
+        {review.title && <div className="text-sm font-semibold text-espresso">{review.title}</div>}
+        <p className="text-sm text-espresso/80 whitespace-pre-line break-words">
+          {expanded || !long ? comment : `${comment.slice(0, COMMENT_PREVIEW).trimEnd()}…`}
+          {long && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="ml-1 text-xs font-semibold text-primary hover:underline"
+            >
+              {expanded ? 'Show less' : 'Read full review'}
+            </button>
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 pt-1">
+        {!review.is_approved && (
+          <Button size="sm" onClick={() => onApprove(review)} disabled={busy}>
+            <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            Approve
+          </Button>
+        )}
+        {!review.is_verified_offline && (
+          <Button size="sm" variant="outline" onClick={() => onVerify(review)} disabled={busy}>
+            <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            Mark as verified purchase
+          </Button>
+        )}
+        <Button size="sm" variant="danger" onClick={() => onDelete(review)} disabled={busy} aria-label={`Delete review by ${name}`}>
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Delete
+        </Button>
+      </div>
+    </li>
   );
 }
 
 export function AdminManageReviewsPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const beginRequest = useLatestRequest();
+
   const [tab, setTab] = useState('pending');
+  const [page, setPage] = useState(1);
   const [reviews, setReviews] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
   const [actionLoading, setActionLoading] = useState(null);
 
-  const approvedParam = tab === 'pending' ? false : tab === 'approved' ? true : undefined;
-
-  const fetchReviews = useCallback(async (p = 1) => {
+  const fetchReviews = useCallback(async () => {
+    const isCurrent = beginRequest();
     setLoading(true);
+    setLoadError('');
     try {
-      const params = { page: p, limit: LIMIT };
-      if (approvedParam !== undefined) params.approved = approvedParam;
+      const params = { page, limit: LIMIT };
+      if (tab === 'pending') params.approved = false;
+      if (tab === 'approved') params.approved = true;
       const res = await api.get('/reviews/admin', { params });
-      setReviews(res.data.items || []);
-      setTotal(res.data.total || 0);
+      if (!isCurrent()) return;
+      const items = res.data?.items || [];
+      const nextTotal = res.data?.total || 0;
+      // The page emptied (e.g. last item approved elsewhere) — step back a page
+      if (!items.length && page > 1 && nextTotal > 0) {
+        setPage(Math.max(1, Math.ceil(nextTotal / LIMIT)));
+        return;
+      }
+      setReviews(items);
+      setTotal(nextTotal);
+    } catch (err) {
+      if (isCurrent()) setLoadError(getErrorMessage(err, 'Could not load reviews.'));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [approvedParam]);
+  }, [tab, page, beginRequest]);
 
   const fetchPendingCount = useCallback(async () => {
     try {
       const res = await api.get('/reviews/admin', { params: { approved: false, limit: 1 } });
-      setPendingCount(res.data.total || 0);
+      setPendingCount(res.data?.total || 0);
     } catch {
       // non-critical
     }
   }, []);
 
-  useEffect(() => {
-    setPage(1);
-    fetchReviews(1);
-  }, [tab, fetchReviews]);
+  useEffect(() => { fetchReviews(); }, [fetchReviews]);
+  useEffect(() => { fetchPendingCount(); }, [fetchPendingCount]);
 
-  useEffect(() => {
+  const changeTab = (next) => {
+    if (next === tab) return;
+    setReviews([]);
+    setTotal(0);
+    setTab(next);
+    setPage(1);
+  };
+
+  /** After an item leaves the current list: refetch this page, or the previous one if it is now empty. */
+  const afterRemoval = () => {
+    const remaining = Math.max(0, total - 1);
+    const lastPage = Math.max(1, Math.ceil(remaining / LIMIT));
+    if (page > lastPage) setPage(lastPage); // effect refetches
+    else fetchReviews();
+  };
+
+  const countsChanged = () => {
     fetchPendingCount();
-  }, [fetchPendingCount]);
+    notifyAdminCountsChanged(); // sidebar badge
+  };
 
   const handleApprove = async (review) => {
     setActionLoading(`approve-${review.id}`);
     try {
       const updated = await api.put(`/reviews/admin/${review.id}`, { is_approved: true });
-      setReviews((prev) => prev.map((r) => r.id === review.id ? { ...r, ...updated.data } : r));
+      toast.success(`Review by ${review.reviewer_name} approved`);
+      countsChanged();
       if (tab === 'pending') {
-        setReviews((prev) => prev.filter((r) => r.id !== review.id));
-        setTotal((t) => Math.max(0, t - 1));
-        setPendingCount((c) => Math.max(0, c - 1));
+        afterRemoval();
+      } else {
+        setReviews((prev) => prev.map((r) => (r.id === review.id ? { ...r, ...updated.data } : r)));
       }
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not approve the review.'));
     } finally {
       setActionLoading(null);
     }
@@ -96,216 +200,97 @@ export function AdminManageReviewsPage() {
     setActionLoading(`verify-${review.id}`);
     try {
       const updated = await api.put(`/reviews/admin/${review.id}`, { is_verified_offline: true });
-      setReviews((prev) => prev.map((r) => r.id === review.id ? { ...r, ...updated.data } : r));
+      setReviews((prev) => prev.map((r) => (r.id === review.id ? { ...r, ...updated.data } : r)));
+      toast.success('Marked as a verified purchase');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not verify the review.'));
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleDelete = async (review) => {
-    if (!window.confirm(`Delete review by "${review.reviewer_name}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete review by "${review.reviewer_name}"?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete review',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setActionLoading(`delete-${review.id}`);
     try {
       await api.delete(`/reviews/admin/${review.id}`);
-      setReviews((prev) => prev.filter((r) => r.id !== review.id));
-      setTotal((t) => Math.max(0, t - 1));
-      if (!review.is_approved) setPendingCount((c) => Math.max(0, c - 1));
+      toast.success('Review deleted');
+      if (!review.is_approved) countsChanged();
+      afterRemoval();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not delete the review.'));
     } finally {
       setActionLoading(null);
     }
   };
 
-  const totalPages = Math.ceil(total / LIMIT);
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   const tabs = [
-    { key: 'pending', label: 'Pending', count: pendingCount },
-    { key: 'approved', label: 'Approved', count: null },
-    { key: 'all', label: 'All', count: null },
+    { value: 'pending', label: 'Pending', count: pendingCount },
+    { value: 'approved', label: 'Approved' },
+    { value: 'all', label: 'All' },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-espresso">Review Management</h1>
-          <p className="text-sm text-espresso/50 mt-0.5">Approve, verify, or remove customer reviews</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => { fetchReviews(page); fetchPendingCount(); }}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl border border-stone-200 text-sm font-medium text-stone-500 hover:text-espresso hover:border-stone-300 transition-colors"
+    <Page
+      title="Review Management"
+      description="Approve, verify, or remove customer reviews"
+      actions={
+        <Button
+          variant="outline" size="sm"
+          onClick={() => { fetchReviews(); countsChanged(); }}
+          disabled={loading}
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
-        </button>
-      </div>
+        </Button>
+      }
+    >
+      <Tabs tabs={tabs} value={tab} onChange={changeTab} />
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-stone-200">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.key
-                ? 'border-primary text-primary'
-                : 'border-transparent text-stone-500 hover:text-espresso'
-            }`}
-          >
-            {t.label}
-            {t.count !== null && t.count > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-500 text-white">
-                {t.count > 99 ? '99+' : t.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
-        {loading ? (
-          <div className="py-16 text-center text-sm text-stone-400">Loading reviews…</div>
+      <Card className="overflow-hidden">
+        {loading && !reviews.length ? (
+          <LoadingState label="Loading reviews…" />
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={fetchReviews} />
         ) : reviews.length === 0 ? (
-          <div className="py-16 text-center text-sm text-stone-400">
-            {tab === 'pending' ? 'No pending reviews — all caught up!' : 'No reviews found.'}
-          </div>
+          <EmptyState>{tab === 'pending' ? 'No pending reviews — all caught up!' : 'No reviews found.'}</EmptyState>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-stone-100">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Product</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Reviewer</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Rating</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider min-w-[200px]">Comment</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Date</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Status</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-50">
-                {reviews.map((review) => (
-                  <tr key={review.id} className="hover:bg-stone-50 transition-colors">
-                    {/* Product */}
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-espresso text-xs line-clamp-2 max-w-[140px] block">
-                        {review.product_name || `Product #${review.product_id}`}
-                      </span>
-                    </td>
-
-                    {/* Reviewer */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <div className="h-7 w-7 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">
-                          {review.reviewer_name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-medium text-espresso text-xs">{review.reviewer_name}</div>
-                          {review.reviewer_email && (
-                            <div className="text-[10px] text-stone-400 truncate max-w-[120px]">{review.reviewer_email}</div>
-                          )}
-                          {review.is_verified_offline && (
-                            <div className="flex items-center gap-0.5 text-[10px] text-teal-600 font-semibold">
-                              <BadgeCheck className="h-3 w-3" /> Verified
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Rating */}
-                    <td className="px-4 py-3">
-                      <StarRating value={review.rating} size="sm" />
-                      <span className="text-[10px] text-stone-400 mt-0.5 block">{review.rating}/5</span>
-                    </td>
-
-                    {/* Comment */}
-                    <td className="px-4 py-3">
-                      {review.title && (
-                        <div className="font-semibold text-espresso text-xs mb-0.5">{review.title}</div>
-                      )}
-                      <p className="text-xs text-stone-500 line-clamp-2">
-                        {review.comment.length > 120 ? review.comment.slice(0, 120) + '…' : review.comment}
-                      </p>
-                    </td>
-
-                    {/* Date */}
-                    <td className="px-4 py-3">
-                      <span className="text-xs text-stone-400 whitespace-nowrap">
-                        {new Date(review.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-4 py-3">
-                      <StatusPill approved={review.is_approved} />
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <ActionBtn
-                          onClick={() => handleApprove(review)}
-                          disabled={review.is_approved || actionLoading === `approve-${review.id}`}
-                          title={review.is_approved ? 'Already approved' : 'Approve review'}
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </ActionBtn>
-                        <ActionBtn
-                          onClick={() => handleVerify(review)}
-                          disabled={review.is_verified_offline || actionLoading === `verify-${review.id}`}
-                          title={review.is_verified_offline ? 'Already verified' : 'Mark as verified purchase'}
-                        >
-                          <BadgeCheck className="h-4 w-4" />
-                        </ActionBtn>
-                        <ActionBtn
-                          onClick={() => handleDelete(review)}
-                          disabled={actionLoading === `delete-${review.id}`}
-                          title="Delete review"
-                          danger
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </ActionBtn>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className={cn('-mx-4 sm:-mx-5 -my-4 sm:-my-5 divide-y divide-espresso/8', loading && 'opacity-60')}>
+            {reviews.map((review) => (
+              <ReviewItem
+                key={review.id}
+                review={review}
+                busy={actionLoading !== null}
+                onApprove={handleApprove}
+                onVerify={handleVerify}
+                onDelete={handleDelete}
+              />
+            ))}
+          </ul>
         )}
-      </div>
+      </Card>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-xs text-stone-400">
-            Showing {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, total)} of {total} reviews
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => { setPage(page - 1); fetchReviews(page - 1); }}
-              className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-semibold disabled:opacity-40 hover:border-primary hover:text-primary transition-colors"
-            >
-              ← Prev
-            </button>
-            <span className="text-xs text-stone-500">Page {page} of {totalPages}</span>
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => { setPage(page + 1); fetchReviews(page + 1); }}
-              className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-semibold disabled:opacity-40 hover:border-primary hover:text-primary transition-colors"
-            >
-              Next →
-            </button>
-          </div>
-        </div>
+      {!loadError && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          disabled={loading}
+          summary={
+            total > 0
+              ? `Showing ${(page - 1) * LIMIT + 1}–${Math.min(page * LIMIT, total)} of ${total} reviews`
+              : undefined
+          }
+        />
       )}
-    </div>
+    </Page>
   );
 }

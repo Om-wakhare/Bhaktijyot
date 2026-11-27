@@ -1,431 +1,396 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../../services/apiClient';
+import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
-import { Button, Card, Input, Page, Select } from '../../components/admin/ui';
+import {
+  Button, Card, EmptyState, ErrorState, Input, LoadingState, Page, Pill, Select, cn,
+} from '../../components/admin/ui';
+import { useToast } from '../../components/admin/Toast';
+import { useConfirm } from '../../components/admin/ConfirmDialog';
+import {
+  flattenTree, formatINR, httpStatus, indentLabel, subtreeIds, useLatestRequest,
+} from '../../components/admin/adminUtils';
 
+/** Stock -1 means "unlimited / not tracked" in the backend — never show it as a number. */
 function StockBadge({ stock }) {
-  if (stock === -1)  return <Chip bg="#F3F4F6" color="#6B7280">Unlimited</Chip>;
-  if (stock === 0)   return <Chip bg="#FEE2E2" color="#B91C1C">Out of Stock</Chip>;
-  if (stock <= 5)    return <Chip bg="#FEF3C7" color="#92400E">Low: {stock}</Chip>;
-  return                    <Chip bg="#D1FAE5" color="#065F46">In Stock: {stock}</Chip>;
+  if (stock === -1 || stock === null || stock === undefined) {
+    return <Pill className="bg-espresso/5 text-espresso/75" title="Stock is not tracked for this product">Unlimited</Pill>;
+  }
+  if (stock === 0) return <Pill className="bg-red-100 text-red-800">Out of stock</Pill>;
+  if (stock <= 5) return <Pill className="bg-gold-100 text-gold-800">Low: {stock} left</Pill>;
+  return <Pill className="bg-primary-50 text-primary-dark">{stock} in stock</Pill>;
+}
+
+/** Sort value: untracked (unlimited) stock sorts after every real count. */
+function stockSortValue(stock) {
+  return stock === -1 || stock === null || stock === undefined ? Number.POSITIVE_INFINITY : stock;
 }
 
 function StatusDot({ active }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <span style={{
-        width: 8, height: 8, borderRadius: '50%',
-        background: active ? '#1D3D2C' : '#D1D5DB', flexShrink: 0,
-      }} />
-      <span style={{ fontSize: 11, fontWeight: 600, color: active ? '#1D3D2C' : '#9CA3AF' }}>
+    <span className="inline-flex items-center gap-1.5">
+      <span className={cn('h-2 w-2 rounded-full shrink-0', active ? 'bg-primary' : 'bg-espresso/30')} />
+      <span className={cn('text-[11px] font-semibold', active ? 'text-primary' : 'text-espresso/60')}>
         {active ? 'Published' : 'Draft'}
       </span>
     </span>
   );
 }
 
-function Chip({ bg, color, children }) {
+function SortHeader({ col, label, sort, onSort }) {
+  const active = sort.col === col;
   return (
-    <span style={{
-      display: 'inline-block', padding: '2px 8px', borderRadius: 99,
-      fontSize: 11, fontWeight: 700, background: bg, color,
-    }}>
-      {children}
-    </span>
+    <th
+      className="px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-espresso/60"
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button type="button" onClick={() => onSort(col)} className="inline-flex items-center gap-1 uppercase hover:text-espresso">
+        {label}
+        <span aria-hidden="true">{active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+      </button>
+    </th>
   );
 }
 
-function th(sortable = false) {
-  return {
-    padding: '10px 14px', fontWeight: 600, fontSize: 11,
-    textAlign: 'left', color: '#6B7280',
-    letterSpacing: '0.04em', textTransform: 'uppercase',
-    cursor: sortable ? 'pointer' : 'default',
-    userSelect: sortable ? 'none' : undefined,
-  };
-}
-function td() { return { padding: '10px 14px', verticalAlign: 'middle' }; }
+const TH = 'px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-espresso/60';
+const TD = 'px-3.5 py-2.5 align-middle';
 
 export function AdminManageProductsPage() {
-  const [products, setProducts]     = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [toast, setToast]           = useState(null);
+  const toast = useToast();
+  const confirm = useConfirm();
+  const beginRequest = useLatestRequest();
 
-  const [search, setSearch]           = useState('');
-  const [catFilter, setCatFilter]     = useState('');
+  const [products, setProducts] = useState([]);
+  const [categoryTree, setCategoryTree] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [busyId, setBusyId] = useState(null);
+
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [sort, setSort]               = useState({ col: 'name', dir: 'asc' });
+  const [sort, setSort] = useState({ col: 'name', dir: 'asc' });
 
-  // Bulk upload
-  const [bulkOpen, setBulkOpen]           = useState(false);
-  const [bulkFile, setBulkFile]           = useState(null);
-  const [bulkUploading, setBulkUploading] = useState(false);
-  const [bulkResult, setBulkResult]       = useState(null);
-
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const openBulk = () => { setBulkOpen(true); setBulkFile(null); setBulkResult(null); };
-
-  const downloadTemplate = async () => {
+  const load = useCallback(async () => {
+    const isCurrent = beginRequest();
+    setLoading(true);
+    setLoadError('');
     try {
-      const res = await api.get('/products/bulk-template', { responseType: 'blob' });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'product_bulk_template.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      showToast('Could not download template', 'error');
-    }
-  };
-
-  const handleBulkUpload = async () => {
-    if (!bulkFile) return;
-    setBulkUploading(true);
-    setBulkResult(null);
-    try {
-      const fd = new FormData();
-      fd.append('file', bulkFile);
-      const res = await api.post('/products/bulk-upload', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setBulkResult(res.data);
-      if (res.data.created > 0) {
-        const pRes = await api.get('/products', { params: { include_inactive: true } });
-        setProducts(pRes.data);
-        showToast(`${res.data.created} product${res.data.created !== 1 ? 's' : ''} imported`);
-      }
+      const [pRes, cRes] = await Promise.all([
+        api.get('/products', { params: { include_inactive: true } }),
+        api.get('/categories'),
+      ]);
+      if (!isCurrent()) return;
+      setProducts(Array.isArray(pRes.data) ? pRes.data : []);
+      setCategoryTree(Array.isArray(cRes.data) ? cRes.data : []);
     } catch (err) {
-      showToast(err?.response?.data?.detail || 'Upload failed', 'error');
+      if (isCurrent()) setLoadError(getErrorMessage(err, 'Could not load products.'));
     } finally {
-      setBulkUploading(false);
+      if (isCurrent()) setLoading(false);
+    }
+  }, [beginRequest]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const refreshProducts = async () => {
+    try {
+      const res = await api.get('/products', { params: { include_inactive: true } });
+      setProducts(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not refresh the product list.'));
     }
   };
 
-  useEffect(() => {
-    Promise.all([
-      api.get('/products', { params: { include_inactive: true } }),
-      api.get('/categories/flat'),
-    ]).then(([pRes, cRes]) => {
-      setProducts(pRes.data);
-      setCategories(cRes.data);
-    }).finally(() => setLoading(false));
-  }, []);
+  // ── Delete / unpublish ───────────────────────────────────
+  const unpublish = async (product) => {
+    setBusyId(product.id);
+    try {
+      const res = await api.put(`/products/${product.id}`, { is_active: false });
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, ...res.data } : p)));
+      toast.success(`"${product.name}" is now a draft (hidden from the store)`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not unpublish the product.'));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const handleDelete = async (product) => {
-    if (!window.confirm(`Delete "${product.name}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${product.name}"?`,
+      message: 'This permanently removes the product, its images and reviews. This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setBusyId(product.id);
     try {
       await api.delete(`/products/${product.id}`);
       setProducts((prev) => prev.filter((p) => p.id !== product.id));
-      showToast('Product deleted');
-    } catch {
-      showToast('Delete failed', 'error');
+      toast.success('Product deleted');
+    } catch (err) {
+      if (httpStatus(err) === 409) {
+        setBusyId(null);
+        const alreadyDraft = product.is_active === false;
+        const unpub = await confirm({
+          title: 'This product can’t be deleted',
+          message: getErrorMessage(err),
+          confirmLabel: alreadyDraft ? 'OK' : 'Unpublish instead',
+          cancelLabel: alreadyDraft ? null : 'Keep as is',
+        });
+        if (unpub && !alreadyDraft) await unpublish(product);
+        return;
+      }
+      toast.error(getErrorMessage(err, 'Delete failed.'));
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const toggleSort = (col) => {
-    setSort((prev) =>
-      prev.col === col
-        ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-        : { col, dir: 'asc' }
-    );
-  };
+  // ── Filtering & sorting ──────────────────────────────────
+  const flatCategories = useMemo(() => flattenTree(categoryTree), [categoryTree]);
 
-  const sortIcon = (col) => {
-    if (sort.col !== col) return ' ↕';
-    return sort.dir === 'asc' ? ' ↑' : ' ↓';
+  const toggleSort = (col) => {
+    setSort((prev) => (prev.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' }));
   };
 
   const filtered = useMemo(() => {
     let list = [...products];
-    if (search) {
-      const q = search.toLowerCase();
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
       list = list.filter(
-        (p) => p.name.toLowerCase().includes(q) || (p.badge ?? '').toLowerCase().includes(q)
+        (p) =>
+          (p.name ?? '').toLowerCase().includes(q) ||
+          (p.badge ?? '').toLowerCase().includes(q) ||
+          (p.slug ?? '').toLowerCase().includes(q),
       );
     }
     if (catFilter) {
-      list = list.filter(
-        (p) => String(p.category_id) === catFilter || String(p.category?.id) === catFilter
-      );
+      // The selected category and all of its subcategories
+      const ids = subtreeIds(categoryTree, Number(catFilter));
+      list = list.filter((p) => ids.has(p.category_id ?? p.category?.id));
     }
-    if (statusFilter === 'published') list = list.filter((p) => p.is_active);
-    if (statusFilter === 'draft')     list = list.filter((p) => !p.is_active);
+    if (statusFilter === 'published') list = list.filter((p) => p.is_active !== false);
+    if (statusFilter === 'draft') list = list.filter((p) => p.is_active === false);
 
+    const val = (p) => {
+      if (sort.col === 'price') return p.price ?? 0;
+      if (sort.col === 'stock') return stockSortValue(p.stock);
+      return (p.name ?? '').toLowerCase();
+    };
     list.sort((a, b) => {
-      let va, vb;
-      if (sort.col === 'name')  { va = a.name ?? '';  vb = b.name ?? ''; }
-      if (sort.col === 'price') { va = a.price ?? 0;  vb = b.price ?? 0; }
-      if (sort.col === 'stock') { va = a.stock ?? -1; vb = b.stock ?? -1; }
+      const va = val(a);
+      const vb = val(b);
       if (va < vb) return sort.dir === 'asc' ? -1 : 1;
-      if (va > vb) return sort.dir === 'asc' ?  1 : -1;
+      if (va > vb) return sort.dir === 'asc' ? 1 : -1;
       return 0;
     });
     return list;
-  }, [products, search, catFilter, statusFilter, sort]);
+  }, [products, categoryTree, search, catFilter, statusFilter, sort]);
+
+  const hasFilters = Boolean(search || catFilter || statusFilter);
 
   return (
     <Page
       title="Products"
-      description={`${products.length} total · ${products.filter((p) => p.is_active).length} published`}
+      description={
+        loadError && !products.length
+          ? undefined
+          : `${products.length} total · ${products.filter((p) => p.is_active !== false).length} published`
+      }
       actions={
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={openBulk}>Bulk Upload</Button>
-          <Link to="/admin/products/add">
-            <Button size="sm">+ Add Product</Button>
-          </Link>
-        </div>
+        <>
+          <Button size="sm" variant="outline" to="/admin/products/bulk">Bulk upload (Excel + photos)</Button>
+          <Button size="sm" to="/admin/products/add">+ Add Product</Button>
+        </>
       }
     >
-      {toast && (
-        <div style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 9999,
-          padding: '10px 18px', borderRadius: '8px',
-          background: toast.type === 'error' ? '#8B1A1A' : '#1D3D2C',
-          color: '#F4E4D1', fontSize: '13px', fontWeight: 600,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-        }}>
-          {toast.msg}
-        </div>
-      )}
-
       <Card>
         {/* Filter bar */}
         <div className="flex flex-wrap gap-3 mb-5 items-center">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or badge…"
-            style={{ maxWidth: 240 }}
+            placeholder="Search name, slug or badge…"
+            aria-label="Search products"
+            className="sm:max-w-[240px]"
           />
           <Select
             value={catFilter}
             onChange={(e) => setCatFilter(e.target.value)}
-            style={{ maxWidth: 180 }}
+            aria-label="Filter by category"
+            className="sm:max-w-[220px]"
           >
             <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            {flatCategories.map((c) => (
+              <option key={c.id} value={String(c.id)}>{indentLabel(c.level, c.name)}</option>
             ))}
           </Select>
           <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ maxWidth: 150 }}
+            aria-label="Filter by status"
+            className="sm:max-w-[150px]"
           >
             <option value="">All statuses</option>
             <option value="published">Published</option>
             <option value="draft">Draft</option>
           </Select>
-          {(search || catFilter || statusFilter) && (
+          {hasFilters && (
             <Button
-              type="button" variant="outline" size="sm"
+              variant="outline" size="sm"
               onClick={() => { setSearch(''); setCatFilter(''); setStatusFilter(''); }}
             >
               Clear
             </Button>
           )}
-          <span className="ml-auto text-xs text-gray-400">
-            {filtered.length} result{filtered.length !== 1 ? 's' : ''}
-          </span>
+          {!loading && !loadError && (
+            <span className="ml-auto text-xs text-espresso/60">
+              {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
+          <LoadingState label="Loading products…" />
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={load} />
+        ) : products.length === 0 ? (
+          <EmptyState>
+            No products yet.{' '}
+            <Link to="/admin/products/add" className="font-semibold text-primary hover:underline">Add your first product</Link>
+          </EmptyState>
         ) : filtered.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-400">
-            No products match these filters.
-          </div>
+          <EmptyState>No products match these filters.</EmptyState>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phones: one card per product */}
+          <ul className="sm:hidden -mx-4 divide-y divide-espresso/8 border-y border-espresso/8">
+            {filtered.map((p) => (
+              <li key={p.id} className="flex gap-3 px-4 py-3">
+                {p.image_path ? (
+                  <img src={mediaUrl(p.image_path)} alt="" className="h-14 w-14 shrink-0 rounded-md object-cover" />
+                ) : (
+                  <div className="h-14 w-14 shrink-0 rounded-md bg-ivory flex items-center justify-center text-lg text-espresso/40" aria-hidden="true">
+                    ◈
+                  </div>
+                )}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <Link to={`/admin/products/${p.id}/edit`} className="block truncate text-sm font-semibold text-espresso hover:underline">
+                    {p.name}
+                  </Link>
+                  <div className="text-[11px] text-espresso/60 truncate">
+                    #{p.id} · {p.category?.name ?? 'No category'}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-espresso">{p.price != null ? formatINR(p.price) : '—'}</span>
+                    <StockBadge stock={p.stock} />
+                    <StatusDot active={p.is_active !== false} />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="outline" size="sm" to={`/admin/products/${p.id}/edit`}>Edit</Button>
+                    <Button
+                      variant="danger" size="sm"
+                      onClick={() => handleDelete(p)}
+                      disabled={busyId === p.id}
+                      aria-label={`Delete ${p.name}`}
+                    >
+                      {busyId === p.id ? '…' : 'Delete'}
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Tablets and computers: sortable table */}
+          <div className="hidden sm:block overflow-x-auto -mx-4 sm:-mx-5">
             <table className="min-w-full text-sm">
-              <thead style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
+              <thead className="bg-ivory border-b border-espresso/8">
                 <tr>
-                  <th style={th()}>Image</th>
-                  <th style={th(true)} onClick={() => toggleSort('name')}>Name{sortIcon('name')}</th>
-                  <th style={th()}>Category</th>
-                  <th style={th(true)} onClick={() => toggleSort('price')}>Price{sortIcon('price')}</th>
-                  <th style={th(true)} onClick={() => toggleSort('stock')}>Stock{sortIcon('stock')}</th>
-                  <th style={th()}>Status</th>
-                  <th style={th()}>Badge</th>
-                  <th style={th()}>Actions</th>
+                  <th className={TH}>Image</th>
+                  <SortHeader col="name" label="Name" sort={sort} onSort={toggleSort} />
+                  <th className={TH}>Category</th>
+                  <SortHeader col="price" label="Price" sort={sort} onSort={toggleSort} />
+                  <SortHeader col="stock" label="Stock" sort={sort} onSort={toggleSort} />
+                  <th className={TH}>Status</th>
+                  <th className={TH}>Badge</th>
+                  <th className={TH}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((p, idx) => (
-                  <tr
-                    key={p.id}
-                    style={{
-                      borderTop: '1px solid #F3F4F6',
-                      background: idx % 2 === 0 ? '#fff' : '#FAFAFA',
-                    }}
-                  >
-                    <td style={td()}>
+                  <tr key={p.id} className={cn('border-t border-espresso/8', idx % 2 ? 'bg-ivory/60' : 'bg-white')}>
+                    <td className={TD}>
                       {p.image_path ? (
-                        <img
-                          src={mediaUrl(p.image_path)}
-                          alt=""
-                          style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 6 }}
-                        />
+                        <img src={mediaUrl(p.image_path)} alt="" className="h-[38px] w-[38px] rounded-md object-cover" />
                       ) : (
-                        <div style={{
-                          width: 38, height: 38, borderRadius: 6, background: '#F3F4F6',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 18, color: '#D1D5DB',
-                        }}>◈</div>
+                        <div className="h-[38px] w-[38px] rounded-md bg-espresso/5 flex items-center justify-center text-lg text-espresso/45" aria-hidden="true">
+                          ◈
+                        </div>
                       )}
                     </td>
 
-                    <td style={td()}>
+                    <td className={TD}>
                       <Link
                         to={`/admin/products/${p.id}/edit`}
-                        className="font-semibold text-gray-900 hover:underline"
-                        style={{
-                          display: 'block', maxWidth: 220,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}
+                        className="block max-w-[220px] truncate font-semibold text-espresso hover:underline"
                       >
                         {p.name}
                       </Link>
-                      <span className="text-[11px] text-gray-400">#{p.id} · {p.slug}</span>
+                      <span className="text-[11px] text-espresso/60">#{p.id} · {p.slug}</span>
                     </td>
 
-                    <td style={td()}>
-                      <span className="text-xs text-gray-500">{p.category?.name ?? '—'}</span>
+                    <td className={TD}>
+                      <span className="text-xs text-espresso/60">{p.category?.name ?? '—'}</span>
                     </td>
 
-                    <td style={td()}>
+                    <td className={TD}>
                       {p.price != null ? (
                         <>
-                          <span className="font-semibold text-gray-800">
-                            ₹{Number(p.price).toLocaleString('en-IN')}
-                          </span>
+                          <span className="font-semibold text-espresso">{formatINR(p.price)}</span>
                           {p.mrp != null && p.mrp > p.price && (
-                            <div className="text-[11px] text-gray-400 line-through">
-                              ₹{Number(p.mrp).toLocaleString('en-IN')}
-                            </div>
+                            <div className="text-[11px] text-espresso/60 line-through">{formatINR(p.mrp)}</div>
                           )}
                         </>
-                      ) : <span className="text-gray-300">—</span>}
+                      ) : (
+                        <span className="text-espresso/45">—</span>
+                      )}
                     </td>
 
-                    <td style={td()}>
-                      <StockBadge stock={p.stock} />
+                    <td className={TD}><StockBadge stock={p.stock} /></td>
+                    <td className={TD}><StatusDot active={p.is_active !== false} /></td>
+
+                    <td className={TD}>
+                      {p.badge ? (
+                        <Pill className="bg-gold-100 text-gold-800">{p.badge}</Pill>
+                      ) : (
+                        <span className="text-espresso/45 text-xs">—</span>
+                      )}
                     </td>
 
-                    <td style={td()}>
-                      <StatusDot active={p.is_active ?? true} />
-                    </td>
-
-                    <td style={td()}>
-                      {p.badge
-                        ? <Chip bg="rgba(139,26,26,0.08)" color="#8B1A1A">{p.badge}</Chip>
-                        : <span className="text-gray-300 text-xs">—</span>}
-                    </td>
-
-                    <td style={td()}>
+                    <td className={TD}>
                       <div className="flex items-center gap-2">
-                        <Link to={`/admin/products/${p.id}/edit`}>
-                          <Button variant="outline" size="sm">Edit</Button>
-                        </Link>
+                        <Button variant="outline" size="sm" to={`/admin/products/${p.id}/edit`}>Edit</Button>
                         <Button
                           variant="danger" size="sm"
                           onClick={() => handleDelete(p)}
+                          disabled={busyId === p.id}
+                          aria-label={`Delete ${p.name}`}
                         >
-                          Delete
+                          {busyId === p.id ? '…' : 'Delete'}
                         </Button>
                       </div>
                     </td>
                   </tr>
                 ))}
-              </tbody>
+                </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
-      {/* ── Bulk Upload Modal ── */}
-      {bulkOpen && (
-        <div
-          onClick={() => !bulkUploading && setBulkOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 10000,
-            background: 'rgba(15,8,2,0.55)', backdropFilter: 'blur(3px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#fff', borderRadius: 16, width: '100%', maxWidth: 520,
-              padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto',
-            }}
-          >
-            <h3 className="text-lg font-bold text-gray-900">Bulk Upload Products</h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Upload an Excel (.xlsx) file to create many products at once.
-            </p>
-
-            {/* Step 1 — template */}
-            <div className="mt-5 p-3 rounded-lg" style={{ background: '#F9FAFB', border: '1px solid #F3F4F6' }}>
-              <p className="text-xs font-semibold text-gray-700 mb-1">1. Download the template</p>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Columns: name (required), slug, description, benefits, price, mrp, badge, category, stock.
-                Leave <b>slug</b> blank to auto-generate. <b>category</b> matches an existing category name.
-              </p>
-              <Button size="sm" variant="outline" onClick={downloadTemplate}>Download Excel Template</Button>
-            </div>
-
-            {/* Step 2 — file */}
-            <div className="mt-4">
-              <p className="text-xs font-semibold text-gray-700 mb-2">2. Choose your filled .xlsx file</p>
-              <input
-                type="file"
-                accept=".xlsx,.xlsm"
-                onChange={(e) => { setBulkFile(e.target.files?.[0] || null); setBulkResult(null); }}
-                className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#1D3D2C] file:text-white hover:file:bg-[#152B1E] file:cursor-pointer"
-              />
-            </div>
-
-            {/* Result */}
-            {bulkResult && (
-              <div className="mt-4 rounded-lg p-3 text-sm" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-                <p className="font-semibold text-green-800">
-                  ✓ {bulkResult.created} created · {bulkResult.skipped} skipped
-                </p>
-                {bulkResult.errors?.length > 0 && (
-                  <div className="mt-2 max-h-40 overflow-y-auto">
-                    <p className="text-xs font-semibold text-red-700 mb-1">Skipped rows:</p>
-                    <ul className="text-[11px] text-red-600 space-y-0.5">
-                      {bulkResult.errors.map((er, i) => (
-                        <li key={i}>Row {er.row}: {er.error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="mt-6 flex items-center justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setBulkOpen(false)} disabled={bulkUploading}>
-                {bulkResult ? 'Done' : 'Cancel'}
-              </Button>
-              <Button size="sm" onClick={handleBulkUpload} disabled={!bulkFile || bulkUploading}>
-                {bulkUploading ? 'Uploading…' : 'Upload & Create'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </Page>
   );
 }
