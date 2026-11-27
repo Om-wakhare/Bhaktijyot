@@ -19,6 +19,9 @@ import { VerifyCertificatePage } from './pages/public/VerifyCertificatePage';
 import { WishlistPage } from './pages/public/WishlistPage';
 import { ConsultPage } from './pages/public/ConsultPage';
 import { NotFoundPage } from './pages/public/NotFoundPage';
+import { PrivacyPolicyPage } from './pages/public/PrivacyPolicyPage';
+import { TermsPage } from './pages/public/TermsPage';
+import { ShippingReturnsPage } from './pages/public/ShippingReturnsPage';
 
 // Admin pages — code-split; only downloaded when the admin visits /admin
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
@@ -33,6 +36,7 @@ const AdminGenerateCertificatePage = lazy(() => import('./pages/admin/AdminGener
 const AdminSettingsPage           = lazy(() => import('./pages/admin/AdminSettingsPage').then(m => ({ default: m.AdminSettingsPage })));
 const AdminOrdersPage             = lazy(() => import('./pages/admin/AdminOrdersPage').then(m => ({ default: m.AdminOrdersPage })));
 const AdminManageReviewsPage      = lazy(() => import('./pages/admin/AdminManageReviewsPage').then(m => ({ default: m.AdminManageReviewsPage })));
+const AdminConsultationsPage      = lazy(() => import('./pages/admin/AdminConsultationsPage').then(m => ({ default: m.AdminConsultationsPage })));
 
 import { useAuth } from './services/auth';
 import { CartProvider } from './services/cart';
@@ -73,6 +77,9 @@ export default function App() {
               <Route path="/order-success" element={<OrderSuccessPage />} />
               <Route path="/track-order" element={<OrderTrackingPage />} />
               <Route path="/consult" element={<ConsultPage />} />
+              <Route path="/privacy" element={<PrivacyPolicyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/shipping-returns" element={<ShippingReturnsPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
 
@@ -97,6 +104,7 @@ export default function App() {
               <Route path="certificates/generate" element={<Suspense fallback={<AdminFallback />}><AdminGenerateCertificatePage /></Suspense>} />
               <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettingsPage /></Suspense>} />
               <Route path="orders" element={<Suspense fallback={<AdminFallback />}><AdminOrdersPage /></Suspense>} />
+              <Route path="consultations" element={<Suspense fallback={<AdminFallback />}><AdminConsultationsPage /></Suspense>} />
             </Route>
           </Routes>
         </WishlistProvider>
