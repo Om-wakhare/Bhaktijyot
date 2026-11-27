@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'motion/react';
 import { mediaUrl } from '../../services/media';
 import { useWishlist } from '../../services/wishlist';
 import { useCart, validPrice, normalizeStock, primaryImagePath } from '../../services/cart';
@@ -52,23 +52,7 @@ function LightningIcon() {
   );
 }
 
-function TruckIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" strokeWidth="2"
-         strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}
-         aria-hidden="true" focusable="false">
-      <rect x="1" y="3" width="15" height="13"/>
-      <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
-      <circle cx="5.5" cy="18.5" r="2.5"/>
-      <circle cx="18.5" cy="18.5" r="2.5"/>
-    </svg>
-  );
-}
-
-const FOREST  = '#1D3D2C';
 const BRASS   = '#C9A84C';
-const BRASS_D = '#A8840A';
 const SINDOOR = '#C02020';
 
 const cardVariants = {
@@ -90,6 +74,7 @@ export function ProductCard({ product, index = 0 }) {
   const { toggle, has } = useWishlist();
   const { addItem } = useCart();
   const whatsappNumber = useWhatsAppNumber();
+  const reduceMotion = useReducedMotion();
   const wished = has(product.id);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
@@ -131,7 +116,7 @@ export function ProductCard({ product, index = 0 }) {
     <motion.div
       custom={index}
       variants={cardVariants}
-      initial="hidden"
+      initial={reduceMotion ? false : 'hidden'}
       animate="visible"
       className="group relative flex flex-col bj-card"
     >
@@ -162,10 +147,9 @@ export function ProductCard({ product, index = 0 }) {
 
           {/* Out-of-stock overlay */}
           {isOOS && (
-            <div className="absolute inset-0 z-[1] flex items-center justify-center"
-                 style={{ background: 'rgba(253,250,245,0.80)' }}>
-              <span className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase"
-                    style={{ letterSpacing: '0.16em', background: '#1C1209', color: '#F4E4D1' }}>
+            <div className="absolute inset-0 z-[1] flex items-center justify-center bg-cream-50/80">
+              <span className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase bg-espresso text-cream"
+                    style={{ letterSpacing: '0.16em' }}>
                 Out of Stock
               </span>
             </div>
@@ -219,11 +203,11 @@ export function ProductCard({ product, index = 0 }) {
 
         {/* Name — the card's main link */}
         <h3
-          className="line-clamp-2"
+          className="line-clamp-2 text-espresso"
           style={{
             fontFamily: "Georgia, 'Times New Roman', serif",
             fontSize: '13.5px', fontWeight: 600,
-            color: '#1C1209', lineHeight: 1.38,
+            lineHeight: 1.38,
           }}
         >
           <Link to={href} className="hover:underline focus-visible:underline">
@@ -245,7 +229,7 @@ export function ProductCard({ product, index = 0 }) {
               ))}
             </span>
             {ratingCount > 0 && (
-              <span className="ml-0.5" style={{ fontSize: '11px', color: '#9E8068' }}>
+              <span className="ml-0.5 text-espresso/70" style={{ fontSize: '11px' }}>
                 {rating.toFixed(1)} ({ratingCount.toLocaleString('en-IN')})
               </span>
             )}
@@ -254,23 +238,22 @@ export function ProductCard({ product, index = 0 }) {
 
         {/* Price */}
         {onRequest ? (
-          <div style={{ fontSize: '13px', fontWeight: 700, color: FOREST }}>
+          <div className="text-primary" style={{ fontSize: '13px', fontWeight: 700 }}>
             Price on request
           </div>
         ) : (
           <div className="flex items-baseline gap-1.5 flex-wrap" style={{ fontVariantNumeric: 'tabular-nums' }}>
-            <span style={{ fontSize: '15px', fontWeight: 700, color: FOREST }}>
+            <span className="text-primary" style={{ fontSize: '15px', fontWeight: 700 }}>
               ₹{price.toLocaleString('en-IN')}
             </span>
             {hasDiscount && (
               <>
-                <span className="line-through" style={{ fontSize: '12px', color: '#9E8068' }}>
+                <span className="line-through text-espresso/70" style={{ fontSize: '12px' }}>
                   <span className="sr-only">MRP </span>₹{mrp.toLocaleString('en-IN')}
                 </span>
-                <span style={{
+                <span className="bg-primary-50 text-primary" style={{
                   fontSize: '10px', fontWeight: 700,
                   padding: '2px 7px', borderRadius: '4px',
-                  background: '#E8F2EA', color: FOREST,
                 }}>
                   {discountPct}% off
                 </span>
@@ -279,21 +262,13 @@ export function ProductCard({ product, index = 0 }) {
           </div>
         )}
 
-        {/* Urgency / shipping micro-row */}
-        <div className="flex items-center gap-2" style={{ minHeight: '16px' }}>
-          {canBuy && isLowStock && (
-            <span className="flex items-center gap-1 font-semibold" style={{ fontSize: '11px', color: SINDOOR }}>
-              <LightningIcon />
-              Only {stock} left
-            </span>
-          )}
-          {canBuy && !isLowStock && (
-            <span className="flex items-center gap-1 font-semibold" style={{ fontSize: '11px', color: BRASS_D }}>
-              <TruckIcon />
-              Free Shipping
-            </span>
-          )}
-        </div>
+        {/* Low-stock note (only when the stock is tracked and low) */}
+        {canBuy && isLowStock && (
+          <span className="flex items-center gap-1 font-semibold" style={{ fontSize: '11px', color: SINDOOR }}>
+            <LightningIcon />
+            Only {stock} left
+          </span>
+        )}
 
         <div className="flex-1" />
 
@@ -321,12 +296,11 @@ export function ProductCard({ product, index = 0 }) {
           </a>
         ) : (
           <div
-            className="w-full flex items-center justify-center"
+            className="w-full flex items-center justify-center bg-espresso/6 text-espresso/70"
             style={{
               padding: '10px', borderRadius: '7px',
               fontSize: '11px', fontWeight: 700,
               letterSpacing: '0.10em', textTransform: 'uppercase',
-              background: 'rgba(28,18,9,0.06)', color: '#9E8068',
             }}
           >
             Out of Stock

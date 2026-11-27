@@ -10,6 +10,7 @@ import { useRef } from 'react';
  *   onChange    — (value: number) => void  (required when interactive)
  *   label       — accessible name of the input group (default "Rating")
  *   labelledBy  — id of a visible label for the input group (preferred over `label`)
+ *   describedBy — id(s) of help / error text for the input group
  *
  * Display mode renders plain, non-interactive markup announced as "Rated 4.5 out of 5".
  */
@@ -24,7 +25,7 @@ function Star({ filled, className }) {
       className={className}
       viewBox="0 0 20 20"
       fill={filled ? '#C9A84C' : 'none'}
-      stroke={filled ? '#C9A84C' : '#D4AF37'}
+      stroke={filled ? '#C9A84C' : '#A88530'}
       strokeWidth="1.5"
       aria-hidden="true"
       focusable="false"
@@ -42,6 +43,7 @@ export function StarRating({
   onChange,
   label = 'Rating',
   labelledBy,
+  describedBy,
 }) {
   const starClass = SIZES[size] ?? SIZES.sm;
   const numeric = Number(value) || 0;
@@ -90,7 +92,8 @@ export function StarRating({
       role="radiogroup"
       aria-label={labelledBy ? undefined : label}
       aria-labelledby={labelledBy}
-      className="flex items-center gap-0.5"
+      aria-describedby={describedBy}
+      className="flex items-center gap-1"
       onKeyDown={onKeyDown}
     >
       {Array.from({ length: max }, (_, i) => {
@@ -105,7 +108,7 @@ export function StarRating({
             aria-label={`${starValue} star${starValue > 1 ? 's' : ''}`}
             tabIndex={i === focusIdx ? 0 : -1}
             onClick={() => select(starValue)}
-            className="cursor-pointer rounded hover:scale-110 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            className="cursor-pointer rounded p-0.5 hover:scale-110 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             <Star filled={starValue <= rounded} className={starClass} />
           </button>

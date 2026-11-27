@@ -24,6 +24,7 @@ const CERT_FIELDS = [
   ['issue_date',       'Issue Date'],
   ['certificate_no',   'Certificate No.'],
   ['report_for',       'Report For'],
+  ['on_behalf',        'On Behalf Of'],
 ];
 
 function presentFields(data) {
@@ -97,9 +98,9 @@ export function VerifyCertificatePage() {
         <div className="h-16 w-16 rounded-2xl bg-primary/10 mx-auto flex items-center justify-center">
           <ShieldCheck className="h-8 w-8 text-primary" aria-hidden="true" />
         </div>
-        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-dark">Authenticity</div>
+        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-700">Authenticity</div>
         <h1 className="font-display text-4xl font-semibold text-espresso">Verify Certificate</h1>
-        <p className="text-sm text-espresso/65 max-w-sm mx-auto">
+        <p className="text-sm text-espresso/80 max-w-sm mx-auto">
           Enter the certificate code printed on your Bhaktijyot report to instantly verify its authenticity.
         </p>
       </div>
@@ -107,23 +108,23 @@ export function VerifyCertificatePage() {
       <form onSubmit={handleSubmit} className="max-w-2xl mx-auto flex flex-col sm:flex-row gap-3" role="search">
         <div className="relative flex-1">
           <label htmlFor={inputId} className="sr-only">Certificate code</label>
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-espresso/35 pointer-events-none" aria-hidden="true" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-espresso/50 pointer-events-none" aria-hidden="true" />
           <input
             id={inputId}
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Enter certificate code (e.g. BJ-2024-3892)"
+            placeholder="Certificate code, e.g. 3F9A1C0B7E"
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            className="w-full pl-11 pr-4 py-3.5 rounded-full border border-espresso/15 text-sm text-espresso placeholder:text-espresso/40 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white transition-all"
+            className="w-full pl-11 pr-4 py-3.5 rounded-full border border-espresso/20 text-sm text-espresso placeholder:text-espresso/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white transition-all"
           />
         </div>
         <button
           type="submit"
           disabled={loading || !code.trim()}
-          className="px-7 py-3.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+          className="px-7 py-3.5 rounded-full bg-primary text-cream text-sm font-semibold hover:bg-primary-dark disabled:opacity-60 transition-colors shrink-0"
         >
           {loading ? 'Verifying…' : 'Verify'}
         </button>
@@ -145,7 +146,7 @@ export function VerifyCertificatePage() {
             <ShieldCheck className="h-5 w-5 text-primary shrink-0" aria-hidden="true" />
             <div>
               <h2 id="cert-verified-heading" className="text-sm font-semibold text-primary">Certificate Verified</h2>
-              <div className="text-xs text-primary/80">This certificate is authentic and issued by Bhaktijyot</div>
+              <div className="text-xs text-primary">This certificate code is in Bhaktijyot&apos;s records.</div>
             </div>
           </div>
 
@@ -165,7 +166,7 @@ export function VerifyCertificatePage() {
                   download
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-cream text-sm font-semibold hover:bg-primary-dark transition-colors"
                 >
                   <Download className="h-4 w-4" aria-hidden="true" />
                   Download Certificate
@@ -185,12 +186,12 @@ export function VerifyCertificatePage() {
                 )}
                 <dl className="grid grid-cols-2 gap-4 text-sm flex-1">
                   <div>
-                    <dt className="text-xs text-espresso/55 uppercase tracking-wider mb-1">Certificate Code</dt>
+                    <dt className="text-xs text-espresso/70 uppercase tracking-wider mb-1">Certificate Code</dt>
                     <dd className="font-semibold text-espresso font-mono break-all">{result.certificate_code}</dd>
                   </div>
                   {result.created_at && (
                     <div>
-                      <dt className="text-xs text-espresso/55 uppercase tracking-wider mb-1">Issued On</dt>
+                      <dt className="text-xs text-espresso/70 uppercase tracking-wider mb-1">Issued On</dt>
                       <dd className="font-medium text-espresso">
                         {new Date(result.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                       </dd>
@@ -201,11 +202,11 @@ export function VerifyCertificatePage() {
 
               {fields.length > 0 && (
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gold-dark mb-2">Gemstone Details</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gold-700 mb-2">Gemstone Details</h3>
                   <dl className="divide-y divide-gold/20 border-y border-gold/20 text-sm">
                     {fields.map((f) => (
                       <div key={f.key} className="grid grid-cols-[minmax(0,2fr),minmax(0,3fr)] gap-3 py-2">
-                        <dt className="text-espresso/60">{f.label}</dt>
+                        <dt className="text-espresso/75">{f.label}</dt>
                         <dd className="font-medium text-espresso break-words whitespace-pre-line">{f.value}</dd>
                       </div>
                     ))}
@@ -215,8 +216,8 @@ export function VerifyCertificatePage() {
 
               {freeText && (
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gold-dark mb-2">Notes</h3>
-                  <p className="text-sm text-espresso/80 whitespace-pre-line leading-relaxed">{freeText}</p>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gold-700 mb-2">Notes</h3>
+                  <p className="text-sm text-espresso/85 whitespace-pre-line leading-relaxed">{freeText}</p>
                 </div>
               )}
             </div>

@@ -1,7 +1,7 @@
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Lock, Truck, ShieldCheck, Package, CircleAlert, LoaderCircle, RotateCw } from 'lucide-react';
-import { useCart, formatINR } from '../../services/cart';
+import { useCart, formatINR, lineIssue } from '../../services/cart';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { useWhatsAppNumber, whatsappLink } from '../../services/siteConfig';
 import { mediaUrl } from '../../services/media';
@@ -133,26 +133,26 @@ function loadRazorpayScript() {
 /* ── Small presentational pieces ── */
 
 const INPUT_BASE =
-  'w-full rounded-xl border bg-cream-50 px-3.5 py-3 text-sm text-espresso placeholder:text-espresso/35 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-60';
+  'w-full rounded-xl border bg-cream-50 px-3.5 py-3 text-sm text-espresso placeholder:text-espresso/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-60';
 
 function inputClass(hasError) {
-  return `${INPUT_BASE} ${hasError ? 'border-red-400 bg-red-50/40' : 'border-espresso/15 hover:border-espresso/30'}`;
+  return `${INPUT_BASE} ${hasError ? 'border-red-500 bg-red-50/40' : 'border-espresso/20 hover:border-espresso/35'}`;
 }
 
 function Field({ id, label, required, hint, error, className = '', children }) {
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-xs font-semibold text-espresso/80 mb-1.5">
+      <label htmlFor={id} className="block text-xs font-semibold text-espresso mb-1.5">
         {label}
-        {required ? <span className="text-red-600" aria-hidden="true"> *</span> : (
-          <span className="font-normal text-espresso/45"> (optional)</span>
+        {required ? <span className="text-red-700" aria-hidden="true"> *</span> : (
+          <span className="font-normal text-espresso/70"> (optional)</span>
         )}
       </label>
       {children}
       {error ? (
         <p id={`${id}-error`} className="mt-1.5 text-xs font-medium text-red-700">{error}</p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-[11px] text-espresso/50">{hint}</p>
+        <p id={`${id}-hint`} className="mt-1.5 text-[11px] text-espresso/70">{hint}</p>
       ) : null}
     </div>
   );
@@ -161,7 +161,7 @@ function Field({ id, label, required, hint, error, className = '', children }) {
 function SectionHeading({ step, children }) {
   return (
     <h2 className="flex items-center gap-3 font-display text-xl font-semibold text-espresso">
-      <span className="h-7 w-7 shrink-0 rounded-full bg-gold/15 border border-gold/50 text-gold-dark text-xs font-bold font-sans flex items-center justify-center" aria-hidden="true">
+      <span className="h-7 w-7 shrink-0 rounded-full bg-gold/15 border border-gold/50 text-gold-700 text-xs font-bold font-sans flex items-center justify-center" aria-hidden="true">
         {step}
       </span>
       {children}
@@ -169,10 +169,18 @@ function SectionHeading({ step, children }) {
   );
 }
 
+/** Cart lines that block online payment, as short reasons. */
+const ISSUE_TEXT = {
+  unavailable: 'no longer available',
+  price_on_request: 'price on request',
+  out_of_stock: 'out of stock',
+  not_enough_stock: 'not enough stock',
+};
+
 /* ── Page ── */
 
 export function CheckoutPage() {
-  const { items, totalAmount, totalItems, clearCart, hasPriceOnRequest } = useCart();
+  const { items, totalAmount, totalItems, clearCart, refresh, blockedCount } = useCart();
   const navigate = useNavigate();
   const whatsappNumber = useWhatsAppNumber();
   const uid = useId();
@@ -181,16 +189,40 @@ export function CheckoutPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [phase, setPhase] = useState('idle'); // idle | preparing | paying | verifying
+  // idle | preparing | confirm (server total differs — waiting for the customer) | paying | verifying
+  const [phase, setPhase] = useState('idle');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // The order created by POST /orders/checkout — its prices and total are the server's
+  const [serverOrder, setServerOrder] = useState(null);
   // Set when Razorpay took the payment but our server couldn't confirm it
   const [paymentIssue, setPaymentIssue] = useState(null);
   const [retrying, setRetrying] = useState(false);
   const busyRef = useRef(false);
   const errorRef = useRef(null);
+  const keyRef = useRef(null);      // Razorpay public key for this attempt
+  const phoneRef = useRef(null);    // normalised phone used for the order
+  const pendingRef = useRef(null);  // created order that is neither paid nor released yet
 
   const busy = phase !== 'idle';
+  const formLocked = busy; // details can't change once an order exists for them
+
+  /* Show current prices and stock, not the ones saved when items were added. */
+  useEffect(() => {
+    refresh().catch(() => {});
+  }, [refresh]);
+
+  /* Release the stock reservation of an order that won't be paid. */
+  const abandonOrder = useCallback((order) => {
+    if (!order?.razorpay_order_id) return;
+    // Fire-and-forget; unpaid orders are also released automatically after the reservation window.
+    api.post('/orders/abandon', { razorpay_order_id: order.razorpay_order_id }).catch(() => {});
+  }, []);
+
+  // Leaving the page while an order is waiting for confirmation releases it
+  useEffect(() => () => {
+    if (pendingRef.current) abandonOrder(pendingRef.current);
+  }, [abandonOrder]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -208,15 +240,17 @@ export function CheckoutPage() {
 
   const focusFirstError = (errors) => {
     const first = FIELD_ORDER.find((name) => errors[name]);
-    if (first) {
-      const el = document.getElementById(fid(first));
-      el?.focus();
-    }
+    if (first) document.getElementById(fid(first))?.focus();
   };
 
   const showError = (msg) => {
     setError(msg);
     requestAnimationFrame(() => errorRef.current?.focus());
+  };
+
+  const release = () => {
+    busyRef.current = false;
+    setPhase('idle');
   };
 
   const fieldProps = (name) => ({
@@ -225,7 +259,7 @@ export function CheckoutPage() {
     value: form[name],
     onChange: handleChange,
     onBlur: handleBlur,
-    disabled: busy,
+    disabled: formLocked,
     'aria-invalid': fieldErrors[name] ? 'true' : undefined,
     'aria-describedby': fieldErrors[name] ? `${fid(name)}-error` : undefined,
     className: inputClass(!!fieldErrors[name]),
@@ -268,8 +302,87 @@ export function CheckoutPage() {
     setRetrying(false);
   };
 
+  /* Open the Razorpay window for an order the server has already priced. */
+  const openPayment = (order) => {
+    const phone = phoneRef.current;
+    busyRef.current = true;
+    setPhase('paying');
+    setNotice('');
+    try {
+      const rzp = new window.Razorpay({
+        key: keyRef.current,
+        amount: Math.round(Number(order.total_amount) * 100),
+        currency: 'INR',
+        name: 'Bhaktijyot',
+        description: `Order #${order.id}`,
+        order_id: order.razorpay_order_id,
+        prefill: {
+          name: order.customer_name,
+          email: order.customer_email || undefined,
+          contact: phone ? `+91${phone}` : undefined,
+        },
+        notes: { order_id: String(order.id) },
+        theme: { color: BRAND_GREEN },
+        handler: async (response) => {
+          pendingRef.current = null; // paid — never release this order's stock
+          setNotice('');
+          setPhase('verifying');
+          const ok = await verifyPayment(response, order, phone);
+          if (!ok) release();
+        },
+        modal: {
+          ondismiss: () => {
+            // Customer closed the window without paying: release the reserved stock now
+            abandonOrder(order);
+            pendingRef.current = null;
+            setServerOrder(null);
+            setNotice('Payment was cancelled. Your cart is saved — you can try again whenever you’re ready.');
+            release();
+          },
+        },
+      });
+      rzp.on?.('payment.failed', (resp) => {
+        const reason = resp?.error?.description;
+        setNotice(reason ? `Payment failed: ${reason}. You can retry in the payment window or close it.` : '');
+      });
+      rzp.open();
+    } catch {
+      abandonOrder(order);
+      pendingRef.current = null;
+      setServerOrder(null);
+      showError('Couldn’t open the payment window. Please try again.');
+      release();
+    }
+  };
+
+  /* The customer backs out of the "updated total" step: release the order. */
+  const cancelConfirm = (message = '') => {
+    if (pendingRef.current) abandonOrder(pendingRef.current);
+    pendingRef.current = null;
+    setServerOrder(null);
+    setNotice(message);
+    release();
+  };
+
+  // If the cart changes while an updated total is waiting for confirmation, start again
+  const cartKey = items.map((i) => `${i.product_id}:${i.quantity}`).join(',');
+  const confirmCartKey = useRef('');
+  useEffect(() => {
+    if (phase === 'confirm' && confirmCartKey.current && confirmCartKey.current !== cartKey) {
+      cancelConfirm('Your cart changed, so we cancelled that payment. Please check the details and pay again.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey, phase]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Step 2 of a price change: the customer accepted the server's total
+    if (phase === 'confirm' && serverOrder) {
+      openPayment(serverOrder);
+      return;
+    }
+
     if (busyRef.current) return; // no double submits
     setError('');
     setNotice('');
@@ -281,19 +394,15 @@ export function CheckoutPage() {
       focusFirstError(errors);
       return;
     }
-    if (hasPriceOnRequest) {
-      showError('Some items in your cart are price on request. Please remove them from your cart to pay online.');
+    if (blockedCount > 0) {
+      showError('Some items in your cart can’t be paid for online. Please review your cart first.');
       return;
     }
 
     busyRef.current = true;
     setPhase('preparing');
-    const release = () => {
-      busyRef.current = false;
-      setPhase('idle');
-    };
-
     const phone = normalizeIndianMobile(form.customer_phone);
+    phoneRef.current = phone;
 
     try {
       // 1. Payment gateway first — if it can't load, no order is created and no stock is reserved.
@@ -311,6 +420,7 @@ export function CheckoutPage() {
         release();
         return;
       }
+      keyRef.current = keyId;
       const loaded = await loadRazorpayScript();
       if (!loaded) {
         showError('Couldn’t load the payment window. Please check your internet connection and try again.');
@@ -318,7 +428,7 @@ export function CheckoutPage() {
         return;
       }
 
-      // 2. Create the order (reserves stock)
+      // 2. Create the order: the server re-prices every item and reserves the stock
       let order;
       try {
         const payload = {
@@ -344,58 +454,29 @@ export function CheckoutPage() {
           requestAnimationFrame(() => focusFirstError(mapped));
         } else {
           showError(getErrorMessage(err, 'We couldn’t place your order. Please try again.'));
+          refresh().catch(() => {}); // e.g. stock ran out — show the current cart state
         }
         return;
       }
 
-      // 3. Open Razorpay
-      const abandon = () => {
-        // Release the reserved stock now (fire-and-forget; unpaid orders are also
-        // released automatically after 30 minutes).
-        api.post('/orders/abandon', { razorpay_order_id: order.razorpay_order_id }).catch(() => {});
-      };
-      setPhase('paying');
-      let rzp;
-      try {
-        rzp = new window.Razorpay({
-          key: keyId,
-          amount: Math.round(Number(order.total_amount) * 100),
-          currency: 'INR',
-          name: 'Bhaktijyot',
-          description: `Order #${order.id}`,
-          order_id: order.razorpay_order_id,
-          prefill: {
-            name: form.customer_name.trim(),
-            email: form.customer_email.trim() || undefined,
-            contact: phone ? `+91${phone}` : undefined,
-          },
-          notes: { order_id: String(order.id) },
-          theme: { color: BRAND_GREEN },
-          handler: async (response) => {
-            setNotice('');
-            setPhase('verifying');
-            const ok = await verifyPayment(response, order, phone);
-            if (!ok) release();
-          },
-          modal: {
-            ondismiss: () => {
-              // Customer closed the window without paying
-              abandon();
-              setNotice('Payment was cancelled. Your cart is saved — you can try again whenever you’re ready.');
-              release();
-            },
-          },
-        });
-        rzp.on?.('payment.failed', (resp) => {
-          const reason = resp?.error?.description;
-          setNotice(reason ? `Payment failed: ${reason}. You can retry in the payment window or close it.` : '');
-        });
-        rzp.open();
-      } catch (err) {
-        abandon();
-        showError('Couldn’t open the payment window. Please try again.');
-        release();
+      pendingRef.current = order;
+      setServerOrder(order);
+
+      // 3. The server's total is what gets charged. If it differs from what the cart showed
+      //    (a price changed since the item was added), ask before opening the payment window.
+      const serverTotal = Number(order.total_amount);
+      if (!Number.isFinite(serverTotal) || Math.abs(serverTotal - totalAmount) > 0.005) {
+        confirmCartKey.current = cartKey;
+        setPhase('confirm');
+        busyRef.current = false;
+        setNotice(
+          `Prices have changed since these items were added. Your order total is now ${formatINR(serverTotal)} — please check the summary and tap Pay to continue.`,
+        );
+        refresh().catch(() => {});
+        return;
       }
+
+      openPayment(order);
     } catch (err) {
       showError(getErrorMessage(err, 'Something went wrong. Please try again.'));
       release();
@@ -412,38 +493,39 @@ export function CheckoutPage() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-16">
         <div role="alert" className="bg-ivory border border-gold/40 rounded-2xl shadow-sm p-6 sm:p-8 space-y-5">
           <div className="h-14 w-14 rounded-full bg-gold/15 border border-gold/40 flex items-center justify-center">
-            <ShieldCheck className="h-7 w-7 text-gold-dark" aria-hidden="true" />
+            <ShieldCheck className="h-7 w-7 text-gold-700" aria-hidden="true" />
           </div>
           <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-gold-dark">Payment received</p>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gold-700">Payment received</p>
             <h1 className="font-display text-2xl sm:text-3xl font-semibold text-espresso">
               We&apos;re confirming your order
             </h1>
-            <p className="text-sm text-espresso/75 leading-relaxed">
+            <p className="text-sm text-espresso/80 leading-relaxed">
               Your payment went through, but we couldn&apos;t confirm it with our server just now.
-              <strong className="font-semibold text-espresso"> Your money is safe</strong> — our system
-              reconciles payments automatically and your order will be confirmed without you paying again.
+              <strong className="font-semibold text-espresso"> Please don&apos;t pay again.</strong> Payments
+              are reconciled with Razorpay automatically, so your order will be confirmed. Try the check again,
+              or send us the details below on WhatsApp.
             </p>
           </div>
 
           <dl className="grid grid-cols-2 gap-3 text-sm bg-cream-50 border border-espresso/10 rounded-xl p-4">
             <div>
-              <dt className="text-xs text-espresso/55">Order ID</dt>
+              <dt className="text-xs text-espresso/70">Order ID</dt>
               <dd className="font-bold text-espresso">#{paymentIssue.orderId}</dd>
             </div>
             <div>
-              <dt className="text-xs text-espresso/55">Amount</dt>
+              <dt className="text-xs text-espresso/70">Amount</dt>
               <dd className="font-bold text-espresso">{formatINR(paymentIssue.total)}</dd>
             </div>
             {paymentIssue.paymentId && (
               <div className="col-span-2">
-                <dt className="text-xs text-espresso/55">Payment ID</dt>
+                <dt className="text-xs text-espresso/70">Payment ID</dt>
                 <dd className="font-mono text-xs text-espresso break-all">{paymentIssue.paymentId}</dd>
               </div>
             )}
           </dl>
 
-          <p className="text-xs text-espresso/55">Details: {paymentIssue.message}</p>
+          <p className="text-xs text-espresso/70">Details: {paymentIssue.message}</p>
 
           <div className="flex flex-col sm:flex-row gap-3">
             <button
@@ -455,22 +537,23 @@ export function CheckoutPage() {
               {retrying
                 ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                 : <RotateCw className="h-4 w-4" aria-hidden="true" />}
-              {retrying ? 'Checking…' : 'Retry verification'}
+              {retrying ? 'Checking…' : 'Check again'}
             </button>
             <a
               href={whatsappLink(whatsappNumber, waMessage)}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-[#25D366] text-white text-sm font-semibold hover:bg-[#1ebe5d] transition-colors"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full border-2 border-primary text-primary text-sm font-semibold hover:bg-primary hover:text-cream transition-colors"
             >
               <WhatsAppIcon className="h-4 w-4" />
-              Contact us on WhatsApp
+              Get help on WhatsApp
             </a>
           </div>
 
           <Link
-            to={`/track-order?order_id=${paymentIssue.orderId}${paymentIssue.phone ? `&phone=${paymentIssue.phone}` : ''}`}
-            className="block text-center text-xs font-semibold text-primary hover:underline"
+            to={`/track-order?order_id=${paymentIssue.orderId}`}
+            state={paymentIssue.phone ? { phone: paymentIssue.phone } : undefined}
+            className="block text-center text-sm font-semibold text-primary hover:underline"
           >
             Track this order
           </Link>
@@ -484,19 +567,19 @@ export function CheckoutPage() {
       <div className="max-w-md mx-auto px-4 py-24 text-center space-y-4" role="status" aria-live="polite">
         <LoaderCircle className="h-10 w-10 mx-auto text-primary animate-spin" aria-hidden="true" />
         <h1 className="font-display text-2xl font-semibold text-espresso">Confirming your payment…</h1>
-        <p className="text-sm text-espresso/60">Please don&apos;t close this page.</p>
+        <p className="text-sm text-espresso/75">Please don&apos;t close this page.</p>
       </div>
     );
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && !serverOrder) {
     return (
       <div className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center space-y-4">
         <div className="h-16 w-16 rounded-full bg-ivory-300/60 mx-auto flex items-center justify-center">
-          <Package className="h-8 w-8 text-gold-dark" aria-hidden="true" />
+          <Package className="h-8 w-8 text-gold-700" aria-hidden="true" />
         </div>
         <h1 className="font-display text-3xl font-semibold text-espresso">Nothing to check out</h1>
-        <p className="text-sm text-espresso/60">Your cart is empty.</p>
+        <p className="text-sm text-espresso/75">Your cart is empty.</p>
         <Link to="/products" className="inline-flex items-center px-6 py-3 rounded-full bg-primary text-cream text-sm font-semibold hover:bg-primary-dark transition-colors">
           Browse Products
         </Link>
@@ -504,17 +587,39 @@ export function CheckoutPage() {
     );
   }
 
+  const blockedLines = items
+    .map((i) => ({ item: i, issue: lineIssue(i) }))
+    .filter((x) => x.issue !== null);
+
+  // Summary lines: the server's once an order exists, otherwise the (refreshed) cart
+  const summaryLines = serverOrder
+    ? (serverOrder.items || []).map((it) => ({
+        key: it.id,
+        name: it.product_name,
+        image: it.product_image_path,
+        quantity: it.quantity,
+        lineTotal: Number(it.price) * it.quantity,
+      }))
+    : items.map((it) => ({
+        key: it.product_id,
+        name: it.name,
+        image: it.image_path,
+        quantity: it.quantity,
+        lineTotal: it.price !== null ? it.price * it.quantity : null,
+      }));
+  const shownTotal = serverOrder ? Number(serverOrder.total_amount) : totalAmount;
+
   const submitLabel =
     phase === 'preparing' ? 'Preparing secure payment…'
     : phase === 'paying' ? 'Complete payment in the Razorpay window…'
-    : `Pay ${formatINR(totalAmount)}`;
+    : `Pay ${formatINR(shownTotal)}`;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-gold-dark">Secure checkout</p>
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-gold-700">Secure checkout</p>
         <h1 className="font-display text-3xl sm:text-4xl font-semibold text-espresso">Checkout</h1>
-        <p className="text-sm text-espresso/60">
+        <p className="text-sm text-espresso/75">
           {totalItems} item{totalItems === 1 ? '' : 's'} · <Link to="/cart" className="font-semibold text-primary hover:underline">Edit cart</Link>
         </p>
       </div>
@@ -535,17 +640,22 @@ export function CheckoutPage() {
           {notice}
         </div>
       )}
-      {hasPriceOnRequest && (
-        <div role="alert" className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-xl px-4 py-3">
-          Some items in your cart are price on request and can&apos;t be paid online.{' '}
-          <Link to="/cart" className="font-semibold underline underline-offset-2">Review your cart</Link> to continue.
+      {blockedLines.length > 0 && !serverOrder && (
+        <div role="alert" className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-xl px-4 py-3 space-y-1">
+          <p>
+            These items can&apos;t be paid for online right now:{' '}
+            {blockedLines.map(({ item, issue }) => `${item.name} (${ISSUE_TEXT[issue]})`).join(', ')}.
+          </p>
+          <p>
+            <Link to="/cart" className="font-semibold underline underline-offset-2">Review your cart</Link> to continue.
+          </p>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} noValidate aria-busy={busy ? 'true' : undefined}>
+      <form onSubmit={handleSubmit} noValidate aria-busy={phase === 'preparing' || phase === 'paying' ? 'true' : undefined}>
         <div className="grid gap-6 lg:grid-cols-[1fr,380px] items-start">
-          {/* Shipping Details */}
-          <section className="bg-ivory border border-gold/30 rounded-2xl p-5 sm:p-6 shadow-sm space-y-5" aria-label="Shipping details">
+          {/* Contact + delivery */}
+          <section className="bg-ivory border border-gold/30 rounded-2xl p-5 sm:p-6 shadow-sm space-y-5" aria-label="Contact and delivery details">
             <SectionHeading step="1">Contact details</SectionHeading>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field id={fid('customer_name')} label="Full name" required error={fieldErrors.customer_name} className="sm:col-span-2">
@@ -556,7 +666,7 @@ export function CheckoutPage() {
                 label="Mobile number"
                 required
                 error={fieldErrors.customer_phone}
-                hint="10-digit Indian mobile — order updates are sent here."
+                hint="10-digit Indian mobile number. You’ll need it to track your order."
               >
                 <input
                   {...fieldProps('customer_phone')}
@@ -622,34 +732,35 @@ export function CheckoutPage() {
             <h2 id={`${uid}-summary`} className="font-display text-xl font-semibold text-espresso">Order Summary</h2>
 
             <ul className="space-y-3 max-h-72 overflow-y-auto pr-1">
-              {items.map((item) => (
-                <li key={item.product_id} className="flex items-center gap-3 text-sm">
+              {summaryLines.map((line) => (
+                <li key={line.key} className="flex items-center gap-3 text-sm">
                   <div className="relative h-12 w-12 shrink-0 rounded-lg overflow-hidden bg-cream-200">
-                    {item.image_path ? (
-                      <img src={mediaUrl(item.image_path)} alt="" className="h-full w-full object-cover" />
+                    {line.image ? (
+                      <img src={mediaUrl(line.image)} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      <Package className="h-5 w-5 m-3.5 text-espresso/25" aria-hidden="true" />
+                      <Package className="h-5 w-5 m-3.5 text-espresso/40" aria-hidden="true" />
                     )}
                     <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-bl-lg bg-espresso text-cream text-[10px] font-bold flex items-center justify-center" aria-hidden="true">
-                      {item.quantity}
+                      {line.quantity}
                     </span>
                   </div>
-                  <span className="flex-1 min-w-0 text-espresso/80 line-clamp-2">
-                    {item.name}<span className="sr-only">, quantity {item.quantity}</span>
+                  <span className="flex-1 min-w-0 text-espresso/85 line-clamp-2">
+                    {line.name}<span className="sr-only">, quantity {line.quantity}</span>
                   </span>
                   <span className="shrink-0 font-semibold text-espresso">
-                    {item.price !== null ? formatINR(item.price * item.quantity) : 'On request'}
+                    {line.lineTotal !== null ? formatINR(line.lineTotal) : 'On request'}
                   </span>
                 </li>
               ))}
             </ul>
 
             <div className="space-y-2 text-sm border-t border-gold/30 pt-3">
-              <div className="flex justify-between text-espresso/70">
+              <div className="flex justify-between text-espresso/80">
                 <span>Subtotal</span>
-                <span>{formatINR(totalAmount)}</span>
+                <span>{formatINR(shownTotal)}</span>
               </div>
-              <div className="flex justify-between text-espresso/70">
+              {/* The server adds no shipping charge to the order total */}
+              <div className="flex justify-between text-espresso/80">
                 <span className="inline-flex items-center gap-1.5">
                   <Truck className="h-3.5 w-3.5" aria-hidden="true" /> Shipping
                 </span>
@@ -658,24 +769,36 @@ export function CheckoutPage() {
             </div>
 
             <div className="border-t border-gold/30 pt-3 flex justify-between items-baseline text-espresso">
-              <span className="font-semibold">Total</span>
-              <span className="font-display text-2xl font-bold">{formatINR(totalAmount)}</span>
+              <span className="font-semibold">{serverOrder ? 'Total to pay' : 'Total'}</span>
+              <span className="font-display text-2xl font-bold">{formatINR(shownTotal)}</span>
             </div>
+            {serverOrder && (
+              <p className="text-[11px] text-espresso/70 -mt-2">Confirmed by our server for order #{serverOrder.id}.</p>
+            )}
 
             <button
               type="submit"
-              disabled={busy || hasPriceOnRequest}
+              disabled={phase === 'preparing' || phase === 'paying' || (blockedCount > 0 && !serverOrder)}
               className="w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-full bg-primary text-cream text-sm font-semibold shadow-sm hover:bg-primary-dark disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-ivory"
             >
-              {busy
+              {phase === 'preparing' || phase === 'paying'
                 ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                 : <Lock className="h-4 w-4" aria-hidden="true" />}
               {submitLabel}
             </button>
+            {phase === 'confirm' && (
+              <button
+                type="button"
+                onClick={() => cancelConfirm('')}
+                className="w-full text-center text-sm font-semibold text-primary hover:underline"
+              >
+                Cancel and edit details
+              </button>
+            )}
 
-            <div className="flex items-center justify-center gap-1.5 text-[11px] text-espresso/55">
-              <ShieldCheck className="h-3.5 w-3.5 text-gold-dark" aria-hidden="true" />
-              Secured by Razorpay. Your payment info is safe.
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-espresso/70">
+              <ShieldCheck className="h-3.5 w-3.5 text-gold-700" aria-hidden="true" />
+              Payments are processed securely by Razorpay.
             </div>
           </aside>
         </div>

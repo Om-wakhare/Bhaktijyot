@@ -23,8 +23,8 @@ export function WishlistButton({ productId, productName, size = 'sm', className 
       title={saved ? 'Remove from wishlist' : 'Add to wishlist'}
       className={`flex items-center justify-center rounded-full transition-all duration-150 ${
         saved
-          ? 'bg-red-50 text-red-500 hover:bg-red-100'
-          : 'bg-white/80 text-espresso/40 hover:text-red-400 hover:bg-white'
+          ? 'bg-red-50 text-red-600 hover:bg-red-100'
+          : 'bg-white/80 text-espresso/60 hover:text-red-600 hover:bg-white'
       } ${className}`}
     >
       <Heart className={iconClass} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />

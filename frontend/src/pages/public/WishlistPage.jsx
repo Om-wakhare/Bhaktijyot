@@ -13,9 +13,9 @@ export function WishlistPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
       <div className="space-y-1">
-        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-dark">Saved</div>
-        <h1 className="font-display text-4xl font-semibold text-espresso">My Wishlist</h1>
-        <p className="text-sm text-espresso/50" aria-live="polite">
+        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-700">Saved</div>
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-espresso">My Wishlist</h1>
+        <p className="text-sm text-espresso/70" aria-live="polite">
           {count} item{count !== 1 ? 's' : ''} saved
         </p>
       </div>
@@ -23,9 +23,9 @@ export function WishlistPage() {
       {count === 0 ? (
         <div className="text-center py-24 space-y-4">
           <Heart className="h-14 w-14 text-espresso/15 mx-auto" aria-hidden="true" />
-          <p className="text-espresso/60 font-medium">Your wishlist is empty.</p>
-          <p className="text-sm text-espresso/50">Tap the heart on any product to save it here.</p>
-          <Link to="/products" className="inline-block px-6 py-3 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">
+          <p className="text-espresso/80 font-medium">Your wishlist is empty.</p>
+          <p className="text-sm text-espresso/70">Tap the heart on any product to save it here.</p>
+          <Link to="/products" className="inline-block px-6 py-3 rounded-full bg-primary text-cream text-sm font-semibold hover:bg-primary-dark transition-colors">
             Browse Products
           </Link>
         </div>

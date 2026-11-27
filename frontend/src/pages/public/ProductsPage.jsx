@@ -26,7 +26,7 @@ const LIMIT = 24;
 const pillStyle = (active) => ({
   border: `1.5px solid ${active ? '#1D3D2C' : 'rgba(28,18,9,0.13)'}`,
   background: active ? '#1D3D2C' : '#FDF8F2',
-  color: active ? '#F4E4D1' : 'rgba(28,18,9,0.62)',
+  color: active ? '#F4E4D1' : 'rgba(28,18,9,0.75)',
 });
 
 export function ProductsPage() {
@@ -37,6 +37,7 @@ export function ProductsPage() {
   const rawSort       = searchParams.get('sort') || 'newest';
   const sortParam     = SORT_LABELS[rawSort] ? rawSort : 'newest';
   const inStockParam  = searchParams.get('inStock') === 'true';
+  const onSaleParam   = searchParams.get('on_sale') === 'true'; // home "Discounts & Deals" → Shop All
   const rawWorld      = searchParams.get('world') || '';
   const worldParam    = WORLDS[rawWorld] ? rawWorld : '';
   const parsedPage    = parseInt(searchParams.get('page') || '1', 10);
@@ -65,6 +66,7 @@ export function ProductsPage() {
     if (categoryParam) params.category_id = categoryParam;
     if (inStockParam)  params.in_stock    = true;
     if (worldParam)    params.world       = worldParam;
+    if (onSaleParam)   params.on_sale     = true; // server keeps only mrp > price
 
     api.get('/products/catalog', { params })
       .then((res) => {
@@ -82,7 +84,22 @@ export function ProductsPage() {
         if (!stale) setLoading(false);
       });
     return () => { stale = true; };
-  }, [qParam, categoryParam, sortParam, inStockParam, worldParam, pageParam, reloadKey]);
+  }, [qParam, categoryParam, sortParam, inStockParam, worldParam, onSaleParam, pageParam, reloadKey]);
+
+  // After a page or filter change, bring the results back into view if the visitor had
+  // scrolled past their top (e.g. clicking "Next" at the bottom of the grid).
+  const filterKey = [qParam, categoryParam, sortParam, inStockParam, worldParam, onSaleParam, pageParam].join('|');
+  const prevFilterKey = useRef(filterKey);
+  useEffect(() => {
+    if (prevFilterKey.current === filterKey) return;
+    prevFilterKey.current = filterKey;
+    const el = resultsRef.current;
+    if (!el) return;
+    const headerOffset = window.matchMedia?.('(min-width: 1024px)').matches ? 128 : 96;
+    if (el.getBoundingClientRect().top >= headerOffset) return; // results top already visible
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  }, [filterKey]);
 
   useEffect(() => { setSearchInput(qParam); }, [qParam]);
 
@@ -98,11 +115,7 @@ export function ProductsPage() {
     setSearchParams(next, { replace: false });
   }, [searchParams, setSearchParams]);
 
-  const goToPage = (page) => {
-    updateParam({ page });
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    resultsRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-  };
+  const goToPage = (page) => updateParam({ page }); // the effect above scrolls to the results
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -110,7 +123,7 @@ export function ProductsPage() {
   };
 
   const clearAll = () =>
-    updateParam({ q: '', categoryId: '', inStock: '', world: '', sort: 'newest', page: 1 });
+    updateParam({ q: '', categoryId: '', inStock: '', world: '', on_sale: '', sort: 'newest', page: 1 });
 
   const totalPages = Math.ceil(total / LIMIT);
   const world = worldParam ? WORLDS[worldParam] : null;
@@ -126,6 +139,7 @@ export function ProductsPage() {
   const activeChips = useMemo(() => {
     const chips = [];
     if (world) chips.push({ key: 'world', label: world.label, clear: { world: '', page: 1 } });
+    if (onSaleParam) chips.push({ key: 'sale', label: 'On Sale', clear: { on_sale: '', page: 1 } });
     if (qParam) chips.push({ key: 'q', label: `"${qParam}"`, clear: { q: '', page: 1 } });
     if (categoryParam) {
       const cat = categories.find((c) => String(c.id) === categoryParam);
@@ -134,12 +148,14 @@ export function ProductsPage() {
     if (inStockParam) chips.push({ key: 'stock', label: 'In Stock Only', clear: { inStock: '', page: 1 } });
     if (sortParam !== 'newest') chips.push({ key: 'sort', label: SORT_LABELS[sortParam] ?? sortParam, clear: { sort: 'newest', page: 1 } });
     return chips;
-  }, [world, qParam, categoryParam, inStockParam, sortParam, categories]);
+  }, [world, onSaleParam, qParam, categoryParam, inStockParam, sortParam, categories]);
 
   const hasFilters = activeChips.length > 0;
 
   const heading = world
     ? world.label
+    : onSaleParam
+    ? 'On Sale'
     : qParam
     ? `Results for "${qParam}"`
     : 'All Products';
@@ -149,14 +165,14 @@ export function ProductsPage() {
 
       {/* Header */}
       <div className="space-y-1">
-        <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: '#A8840A' }}>
-          {world ? 'Shop by World' : 'Browse'}
+        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-700">
+          {world ? 'Shop by World' : onSaleParam ? 'Discounts & Deals' : 'Browse'}
         </div>
-        <h1 className="font-display text-4xl font-semibold" style={{ color: '#1C1209' }}>
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-espresso">
           {heading}
         </h1>
         {world && (
-          <p className="text-sm" style={{ color: 'rgba(28,18,9,0.6)' }}>
+          <p className="text-sm text-espresso/75">
             {world.sub}
             {qParam && <> · Results for &ldquo;{qParam}&rdquo;</>}
             {' · '}
@@ -170,8 +186,22 @@ export function ProductsPage() {
             </button>
           </p>
         )}
+        {!world && onSaleParam && (
+          <p className="text-sm text-espresso/75">
+            Products currently priced below their MRP
+            {qParam && <> · Results for &ldquo;{qParam}&rdquo;</>}
+            {' · '}
+            <button
+              type="button"
+              onClick={() => updateParam({ on_sale: '', page: 1 })}
+              className="font-semibold text-primary underline underline-offset-2 hover:no-underline"
+            >
+              Show all products
+            </button>
+          </p>
+        )}
         {!loading && !error && (
-          <p className="text-sm" style={{ color: 'rgba(28,18,9,0.5)' }} aria-live="polite">
+          <p className="text-sm text-espresso/70" aria-live="polite">
             {total} product{total !== 1 ? 's' : ''}
           </p>
         )}
@@ -287,7 +317,7 @@ export function ProductsPage() {
       {/* Active filter chips */}
       {hasFilters && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold" style={{ color: 'rgba(28,18,9,0.5)' }}>Active:</span>
+          <span className="text-xs font-semibold text-espresso/70">Active:</span>
           {activeChips.map((chip) => (
             <button
               key={chip.key}
@@ -308,8 +338,7 @@ export function ProductsPage() {
           <button
             type="button"
             onClick={clearAll}
-            className="text-xs font-semibold underline-offset-2 hover:underline transition-colors"
-            style={{ color: 'rgba(28,18,9,0.55)' }}
+            className="text-xs font-semibold underline underline-offset-2 hover:no-underline transition-colors text-espresso/75"
           >
             Clear all
           </button>
@@ -318,6 +347,7 @@ export function ProductsPage() {
 
       {/* Results */}
       <div ref={resultsRef} className="scroll-mt-28 lg:scroll-mt-36" aria-busy={loading ? 'true' : undefined}>
+        <h2 className="sr-only">Results</h2>
         {loading ? (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -325,7 +355,7 @@ export function ProductsPage() {
         ) : error ? (
           <div role="alert" className="text-center py-20 space-y-4">
             <CircleAlert className="h-12 w-12 mx-auto" style={{ color: 'rgba(28,18,9,0.2)' }} aria-hidden="true" />
-            <p className="font-medium" style={{ color: 'rgba(28,18,9,0.7)' }}>{error}</p>
+            <p className="font-medium text-espresso/80">{error}</p>
             <button
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
@@ -339,8 +369,12 @@ export function ProductsPage() {
         ) : products.length === 0 ? (
           <div className="text-center py-24 space-y-4">
             <Gem className="h-14 w-14 mx-auto" style={{ color: 'rgba(28,18,9,0.12)' }} aria-hidden="true" />
-            <p className="font-medium" style={{ color: 'rgba(28,18,9,0.6)' }}>
-              {pageParam > 1 ? 'No more products on this page.' : 'No products found.'}
+            <p className="font-medium text-espresso/75">
+              {pageParam > 1
+                ? 'No more products on this page.'
+                : onSaleParam && !qParam && !categoryParam
+                ? 'Nothing is on sale right now.'
+                : 'No products match these filters.'}
             </p>
             {pageParam > 1 ? (
               <button
@@ -387,7 +421,7 @@ export function ProductsPage() {
           >
             <span aria-hidden="true">← </span>Previous
           </button>
-          <span className="text-sm" style={{ color: 'rgba(28,18,9,0.55)' }}>
+          <span className="text-sm text-espresso/75">
             Page <span className="font-semibold" style={{ color: '#1C1209' }}>{pageParam}</span> of{' '}
             <span className="font-semibold" style={{ color: '#1C1209' }}>{totalPages}</span>
           </span>

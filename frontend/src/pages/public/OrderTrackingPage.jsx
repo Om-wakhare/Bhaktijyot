@@ -1,5 +1,5 @@
 import { useState, useEffect, useId, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import { formatINR } from '../../services/cart';
@@ -29,6 +29,10 @@ const STATUS_ICONS = {
   failed: '❌',
   abandoned: '⏸️',
 };
+
+/* Pending = the order exists but the payment hasn't been confirmed yet. */
+const PENDING_TEXT =
+  'We haven\u2019t received the payment confirmation for this order yet. If you have paid, this updates automatically once Razorpay confirms the payment, so please don\u2019t pay again.';
 
 const STOPPED_TEXT = {
   cancelled: 'This order has been cancelled.',
@@ -62,7 +66,7 @@ function StatusTimeline({ status }) {
   const currentIdx = STATUS_STEPS.indexOf(status);
 
   return (
-    <div className="relative">
+    <div className="relative space-y-4">
       <p className="sr-only">Current status: {STATUS_LABELS[status] || status}</p>
       {/* Progress bar */}
       <div className="absolute top-5 left-5 right-5 h-0.5 bg-espresso/10 hidden sm:block" aria-hidden="true" />
@@ -84,29 +88,34 @@ function StatusTimeline({ status }) {
                     ? 'bg-primary text-white'
                     : active
                     ? 'bg-primary text-white ring-4 ring-primary/20'
-                    : 'bg-cream-200 text-espresso/40'
+                    : 'bg-cream-200 text-espresso/70'
                 }`}
               >
                 {done ? '✓' : STATUS_ICONS[step]}
               </div>
-              <div className={`text-xs text-center font-medium ${active ? 'text-primary font-semibold' : done ? 'text-espresso/80' : 'text-espresso/45'}`}>
+              <div className={`text-xs text-center font-medium ${active ? 'text-primary font-semibold' : done ? 'text-espresso/80' : 'text-espresso/70'}`}>
                 {STATUS_LABELS[step]}
               </div>
             </li>
           );
         })}
       </ol>
+      {status === 'pending' && (
+        <p className="text-xs text-espresso/80 bg-gold/10 border border-gold/30 rounded-xl px-3 py-2">{PENDING_TEXT}</p>
+      )}
     </div>
   );
 }
 
 const INPUT_CLASS =
-  'w-full rounded-xl border border-espresso/15 bg-cream-50 px-3.5 py-3 text-sm text-espresso placeholder:text-espresso/35 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary';
+  'w-full rounded-xl border border-espresso/20 bg-cream-50 px-3.5 py-3 text-sm text-espresso placeholder:text-espresso/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary';
 
 export function OrderTrackingPage() {
   const [searchParams] = useSearchParams();
+  const { state } = useLocation();
+  // Prefill from the link: ?order_id=…[&phone=…]; the checkout pages pass the phone in router state
   const initialOrderId = (searchParams.get('order_id') || '').replace(/\D/g, '');
-  const initialPhone = searchParams.get('phone') || '';
+  const initialPhone = String(state?.phone || searchParams.get('phone') || '');
 
   const uid = useId();
   const orderFieldId = `${uid}-order`;
@@ -169,15 +178,15 @@ export function OrderTrackingPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12 space-y-6">
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-dark mb-2">Orders</div>
+        <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-700 mb-2">Orders</div>
         <h1 className="font-display text-3xl font-semibold text-espresso">Track Your Order</h1>
-        <p className="text-sm text-espresso/65 mt-1">Enter your order ID and phone number to check status.</p>
+        <p className="text-sm text-espresso/80 mt-1">Enter your order ID and phone number to check status.</p>
       </div>
 
       <form onSubmit={handleTrack} noValidate className="bg-ivory border border-gold/30 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <label htmlFor={orderFieldId} className="block text-xs font-semibold text-espresso/80 mb-1.5">
+            <label htmlFor={orderFieldId} className="block text-xs font-semibold text-espresso mb-1.5">
               Order ID <span className="text-red-600" aria-hidden="true">*</span>
             </label>
             <input
@@ -192,10 +201,10 @@ export function OrderTrackingPage() {
               aria-describedby={`${orderFieldId}-hint`}
               className={INPUT_CLASS}
             />
-            <p id={`${orderFieldId}-hint`} className="text-[11px] text-espresso/50 mt-1">Found on your order confirmation page</p>
+            <p id={`${orderFieldId}-hint`} className="text-[11px] text-espresso/70 mt-1">Shown on your order confirmation page</p>
           </div>
           <div>
-            <label htmlFor={phoneFieldId} className="block text-xs font-semibold text-espresso/80 mb-1.5">
+            <label htmlFor={phoneFieldId} className="block text-xs font-semibold text-espresso mb-1.5">
               Phone Number <span className="text-red-600" aria-hidden="true">*</span>
             </label>
             <input
@@ -210,7 +219,7 @@ export function OrderTrackingPage() {
               aria-describedby={`${phoneFieldId}-hint`}
               className={INPUT_CLASS}
             />
-            <p id={`${phoneFieldId}-hint`} className="text-[11px] text-espresso/50 mt-1">Used during checkout</p>
+            <p id={`${phoneFieldId}-hint`} className="text-[11px] text-espresso/70 mt-1">The number you entered at checkout</p>
           </div>
         </div>
 
@@ -240,17 +249,17 @@ export function OrderTrackingPage() {
           >
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <div className="text-xs text-espresso/55">Order</div>
+                <div className="text-xs text-espresso/70">Order</div>
                 <div className="text-xl font-bold text-espresso">#{order.id}</div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-espresso/55">Placed on</div>
+                <div className="text-xs text-espresso/70">Placed on</div>
                 <div className="text-sm font-medium text-espresso/80">
                   {new Date(order.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-espresso/55">Total</div>
+                <div className="text-xs text-espresso/70">Total</div>
                 <div className="text-lg font-bold text-primary">
                   {formatINR(order.total_amount)}
                 </div>
@@ -261,7 +270,7 @@ export function OrderTrackingPage() {
             <StatusTimeline status={order.status} />
 
             {order.updated_at && (
-              <p className="text-xs text-espresso/50 text-center">
+              <p className="text-xs text-espresso/70 text-center">
                 Last updated: {new Date(order.updated_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
               </p>
             )}
@@ -278,12 +287,12 @@ export function OrderTrackingPage() {
                       {item.product_image_path ? (
                         <img src={mediaUrl(item.product_image_path)} alt="" className="h-full w-full object-cover" />
                       ) : (
-                        <div className="h-full w-full flex items-center justify-center text-[10px] text-espresso/40" aria-hidden="true">—</div>
+                        <div className="h-full w-full flex items-center justify-center text-[10px] text-espresso/60" aria-hidden="true">—</div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-espresso truncate">{item.product_name}</div>
-                      <div className="text-xs text-espresso/55">
+                      <div className="text-xs text-espresso/70">
                         {formatINR(item.price)} × {item.quantity}
                       </div>
                     </div>
@@ -305,7 +314,7 @@ export function OrderTrackingPage() {
               href={whatsappLink(whatsappNumber, `Namaste! I need help with my Bhaktijyot order #${order.id}`)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#25D366] text-white text-sm font-semibold hover:bg-[#1ebe5d] shrink-0 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-cream text-sm font-semibold hover:bg-primary-dark shrink-0 transition-colors"
             >
               <WhatsAppIcon className="h-4 w-4" />
               Chat on WhatsApp
