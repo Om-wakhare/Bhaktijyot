@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../../services/apiClient';
+import { CheckCircle } from 'lucide-react';
+import api, { getErrorMessage } from '../../services/apiClient';
+import { useWhatsAppNumber, whatsappLink } from '../../services/siteConfig';
+import { WhatsAppIcon } from '../ui/WhatsAppIcon';
 
 /* ── Shared typographic tokens (mirrors HeroSection) ── */
 const GOLD = '#D4AF37';
 const DARK = '#1C1209';
 
-/* Light-bg typography — same scale as hero, adapted for cream/white surface */
+/* Light-bg typography — same scale as hero, adapted for cream/white surface.
+   No fontFamily here: the `font-display` class on the element sets Playfair. */
 const H_PRIMARY = {
-  fontFamily: 'inherit',
   fontSize: 'clamp(2.1rem, 3.6vw, 3.4rem)',
   lineHeight: 1.1,
   fontWeight: 700,
@@ -22,7 +25,7 @@ const H_EYEBROW = {
   letterSpacing: '0.05em',
 };
 const H_SECONDARY = {
-  color: 'rgba(28,18,9,0.65)',
+  color: 'rgba(28,18,9,0.70)',
   fontSize: '0.95rem',
   lineHeight: 1.7,
 };
@@ -33,7 +36,6 @@ const GOLD_GLOW   = '0 0 10px rgba(212,175,55,0.5), 0 0 24px rgba(212,175,55,0.2
 
 /* Card heading — same Playfair Display scale, dark text, gold glow for light bg */
 const CARD_H_PRIMARY = {
-  fontFamily: 'inherit',
   fontSize: 'clamp(1.8rem, 2.8vw, 2.3rem)',
   lineHeight: 1.1,
   fontWeight: 700,
@@ -50,13 +52,13 @@ const CARD_H_EYEBROW = {
   marginBottom: '0.6rem',
 };
 const CARD_H_SECONDARY = {
-  color: 'rgba(28,18,9,0.50)',
+  color: 'rgba(28,18,9,0.65)',
   fontSize: '0.85rem',
   lineHeight: 1.6,
   marginBottom: '1.75rem',
 };
 
-/* Input — white bg, gold border, dark text */
+/* Input — white bg, gold border, dark text (focus ring comes from INPUT_CLASS) */
 const inp = {
   background: '#FFFFFF',
   border: '1.5px solid rgba(212,175,55,0.55)',
@@ -66,6 +68,27 @@ const inp = {
   fontSize: '0.9rem',
   outline: 'none',
   width: '100%',
+  fontFamily: 'inherit',
+};
+const INPUT_CLASS = 'focus:ring-2 focus:ring-gold-400/50 transition-shadow';
+
+/* Gold-glow button look shared by the submit button and the WhatsApp link */
+const GOLD_BUTTON = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '0.5rem',
+  padding: '0.9rem',
+  borderRadius: 8,
+  border: GOLD_BORDER,
+  background: 'transparent',
+  boxShadow: GOLD_GLOW,
+  color: DARK,
+  fontWeight: 800,
+  fontSize: '0.82rem',
+  textTransform: 'uppercase',
+  letterSpacing: '0.16em',
+  textDecoration: 'none',
   fontFamily: 'inherit',
 };
 
@@ -103,6 +126,30 @@ function initials(name) {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
 
+/** Same rule as the backend: 10 digits starting 6–9, optional +91 / 0 prefix and spaces. */
+function isIndianMobile(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits);
+}
+
+function bookingMessage(form) {
+  return (
+    `Hello Bhaktijyot! I'd like to book a consultation.\n\n` +
+    `Name: ${form.name.trim()}\nWhatsApp: ${form.phone.trim()}\nType: ${form.type}\n\n` +
+    `Looking forward to hearing from you!`
+  );
+}
+
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 /* Full-size image card — photo fills the card, details overlaid at the bottom */
 function ExpertCard({ expert }) {
   return (
@@ -125,19 +172,22 @@ function ExpertCard({ expert }) {
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'linear-gradient(160deg, #1D3D2C 0%, #2A5A40 100%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <span style={{ color: 'rgba(212,175,55,0.45)', fontSize: '5.5rem', fontWeight: 700, fontFamily: 'inherit' }}>
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(160deg, #1D3D2C 0%, #2A5A40 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <span className="font-display" style={{ color: 'rgba(212,175,55,0.45)', fontSize: '5.5rem', fontWeight: 700 }}>
             {initials(expert.name)}
           </span>
         </div>
       )}
 
       {/* Bottom gradient for readability */}
-      <div style={{
+      <div aria-hidden="true" style={{
         position: 'absolute', inset: 0,
         background: 'linear-gradient(to top, rgba(15,8,2,0.94) 0%, rgba(15,8,2,0.55) 38%, transparent 68%)',
       }} />
@@ -153,7 +203,7 @@ function ExpertCard({ expert }) {
         <p style={{ color: 'rgba(255,245,230,0.85)', fontSize: '0.86rem', fontWeight: 600, marginTop: '0.45rem' }}>
           {expert.qualification}
         </p>
-        <p style={{ color: 'rgba(255,245,230,0.65)', fontSize: '0.78rem', fontWeight: 500, marginTop: '0.2rem' }}>
+        <p style={{ color: 'rgba(255,245,230,0.72)', fontSize: '0.78rem', fontWeight: 500, marginTop: '0.2rem' }}>
           {expert.experience}
         </p>
       </div>
@@ -161,41 +211,71 @@ function ExpertCard({ expert }) {
   );
 }
 
-export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
-  const [form, setForm] = useState({ name: '', phone: '', type: TYPES[0] });
+const EMPTY_FORM = { name: '', phone: '', type: TYPES[0] };
+
+export function ConsultExpertSection() {
+  const whatsappNumber = useWhatsAppNumber();
+  const uid = useId();
+  const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [sentMessage, setSentMessage] = useState(''); // set once the booking is saved
+  const successHeadingRef = useRef(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  /* ── Expert carousel — auto-rotate only ── */
+  /* ── Expert carousel — auto-rotates, pauses on hover/focus and for reduced motion ── */
   const [active, setActive] = useState(0);
+  const [paused, setPaused] = useState(false);
   useEffect(() => {
+    if (paused || EXPERTS.length < 2 || prefersReducedMotion()) return undefined;
     const t = setInterval(() => setActive((i) => (i + 1) % EXPERTS.length), 4500);
     return () => clearInterval(t);
-  }, []);
+  }, [paused]);
+
+  // Move focus to the confirmation so screen-reader users hear it
+  useEffect(() => {
+    if (sentMessage) successHeadingRef.current?.focus();
+  }, [sentMessage]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+    if (!isIndianMobile(form.phone)) {
+      setError('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
     setLoading(true);
     try {
       await api.post('/consultations', {
-        name: form.name,
-        phone: form.phone,
+        name: form.name.trim(),
+        phone: form.phone.trim(),
         consultation_type: form.type,
       });
-    } catch {
-      // open WhatsApp regardless
+      // Opening WhatsApp here (after an await) would be popup-blocked on phones,
+      // so show a real link the visitor taps instead.
+      setSentMessage(bookingMessage(form));
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not send your request. Please try again.'));
     } finally {
       setLoading(false);
     }
-    const msg =
-      `Hello Bhaktijyot! I'd like to book a consultation.\n\n` +
-      `Name: ${form.name}\nWhatsApp: ${form.phone}\nType: ${form.type}\n\n` +
-      `Looking forward to hearing from you!`;
-    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const reset = () => {
+    setForm(EMPTY_FORM);
+    setSentMessage('');
+    setError('');
+  };
+
+  const ids = {
+    name: `${uid}-name`,
+    phone: `${uid}-phone`,
+    type: `${uid}-type`,
+    error: `${uid}-error`,
   };
 
   return (
-    <section style={{ background: '#F4E4D1' }} className="py-16 lg:py-24">
+    <section style={{ background: '#F4E4D1' }} className="py-16 lg:py-24" aria-labelledby={`${uid}-heading`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* ── Header — centered ── */}
@@ -203,7 +283,7 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
           <p style={{ ...H_EYEBROW, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
             ✨ Meet Our Experts · Since 1985
           </p>
-          <h2 className="font-display mt-3" style={H_PRIMARY}>Consult an Expert</h2>
+          <h2 id={`${uid}-heading`} className="font-display mt-3" style={H_PRIMARY}>Consult an Expert</h2>
           <p className="mx-auto mt-4" style={H_SECONDARY}>
             Not sure which crystal or gemstone is right for you? Get a personalised recommendation
             from our certified gemologists &amp; healers — in person or over WhatsApp.
@@ -214,15 +294,27 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
         <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-stretch">
 
           {/* ── LEFT — expert carousel (auto-rotating) ── */}
-          <div style={{ overflow: 'hidden', borderRadius: '1.25rem' }}>
+          <div
+            role="group"
+            aria-label="Our experts"
+            style={{ overflow: 'hidden', borderRadius: '1.25rem' }}
+            onMouseEnter={() => setPaused(true)}
+            onMouseLeave={() => setPaused(false)}
+            onFocus={() => setPaused(true)}
+            onBlur={() => setPaused(false)}
+          >
             <div style={{
               display: 'flex',
               height: '100%',
               transform: `translateX(-${active * 100}%)`,
               transition: 'transform 0.7s cubic-bezier(0.4,0,0.2,1)',
             }}>
-              {EXPERTS.map((expert) => (
-                <div key={expert.name} style={{ minWidth: '100%', display: 'flex' }}>
+              {EXPERTS.map((expert, i) => (
+                <div
+                  key={expert.name}
+                  style={{ minWidth: '100%', display: 'flex' }}
+                  aria-hidden={i === active ? undefined : 'true'}
+                >
                   <div style={{ flex: 1 }}>
                     <ExpertCard expert={expert} />
                   </div>
@@ -239,47 +331,146 @@ export function ConsultExpertSection({ whatsappNumber = '918484913170' }) {
             padding: 'clamp(1.75rem,4vw,2.5rem)',
             boxShadow: GOLD_GLOW,
           }}>
-            <p style={{ ...CARD_H_EYEBROW, textAlign: 'center' }}>✦ Quick Booking ✦</p>
+            {sentMessage ? (
+              /* ── Success — the visitor taps a real link to open WhatsApp ── */
+              <div className="flex flex-col items-center text-center">
+                <div
+                  aria-hidden="true"
+                  className="h-14 w-14 rounded-full flex items-center justify-center mb-4"
+                  style={{ background: 'rgba(212,175,55,0.10)', border: '1.5px solid rgba(212,175,55,0.45)' }}
+                >
+                  <CheckCircle className="h-7 w-7" style={{ color: GOLD }} />
+                </div>
+                <h3
+                  ref={successHeadingRef}
+                  tabIndex={-1}
+                  className="font-display focus:outline-none"
+                  style={{ ...CARD_H_PRIMARY, textAlign: 'center' }}
+                >
+                  Request Received
+                </h3>
+                <p style={{ ...CARD_H_SECONDARY, textAlign: 'center', marginBottom: '1.5rem' }}>
+                  Thank you{form.name.trim() ? `, ${form.name.trim()}` : ''}! Tap below to send your details to us on
+                  WhatsApp so we can confirm your consultation.
+                </p>
+                <a
+                  href={whatsappLink(whatsappNumber, sentMessage)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full transition-all hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2"
+                  style={GOLD_BUTTON}
+                >
+                  <WhatsAppIcon className="h-4 w-4" />
+                  Continue on WhatsApp
+                </a>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="mt-4 underline underline-offset-4 hover:text-espresso transition-colors"
+                  style={{ color: '#7A5C3B', fontSize: '0.78rem', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Book another consultation
+                </button>
+              </div>
+            ) : (
+              <>
+                <p style={{ ...CARD_H_EYEBROW, textAlign: 'center' }}>✦ Quick Booking ✦</p>
 
-            <h3 className="font-display" style={{ ...CARD_H_PRIMARY, textAlign: 'center' }}>Get in Touch</h3>
+                <h3 className="font-display" style={{ ...CARD_H_PRIMARY, textAlign: 'center' }}>Get in Touch</h3>
 
-            <p style={{ ...CARD_H_SECONDARY, textAlign: 'center' }}>Fill in the details and we'll connect on WhatsApp</p>
+                <p style={{ ...CARD_H_SECONDARY, textAlign: 'center' }}>Fill in the details and we'll connect on WhatsApp</p>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              <input required type="text" placeholder="Your Name"       value={form.name}  onChange={set('name')}  style={inp} />
-              <input required type="tel"  placeholder="WhatsApp Number" value={form.phone} onChange={set('phone')} style={inp} />
-              <select value={form.type} onChange={set('type')} style={{
-                ...inp, cursor: 'pointer', appearance: 'none',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23D4AF37' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', paddingRight: '2.5rem',
-              }}>
-                {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+                <form
+                  onSubmit={handleSubmit}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+                >
+                  <label htmlFor={ids.name} className="sr-only">Your name</label>
+                  <input
+                    id={ids.name}
+                    required
+                    type="text"
+                    autoComplete="name"
+                    maxLength={200}
+                    placeholder="Your Name"
+                    value={form.name}
+                    onChange={set('name')}
+                    className={INPUT_CLASS}
+                    style={inp}
+                  />
 
-              <button
-                type="submit" disabled={loading}
-                className="transition-all hover:scale-[1.02]"
-                style={{
-                  marginTop: '0.35rem', padding: '0.9rem',
-                  borderRadius: 8,
-                  border: GOLD_BORDER,
-                  background: 'transparent',
-                  boxShadow: loading ? 'none' : GOLD_GLOW,
-                  color: DARK, fontWeight: 800, fontSize: '0.82rem',
-                  textTransform: 'uppercase', letterSpacing: '0.16em',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.6 : 1,
-                  fontFamily: 'inherit',
-                }}
-              >
-                {loading ? 'Saving…' : 'Book on WhatsApp'}
-              </button>
-            </form>
+                  <label htmlFor={ids.phone} className="sr-only">WhatsApp number (10-digit Indian mobile)</label>
+                  <input
+                    id={ids.phone}
+                    required
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    maxLength={16}
+                    placeholder="WhatsApp Number"
+                    value={form.phone}
+                    onChange={set('phone')}
+                    aria-invalid={error ? 'true' : undefined}
+                    aria-describedby={error ? ids.error : undefined}
+                    className={INPUT_CLASS}
+                    style={inp}
+                  />
+
+                  <label htmlFor={ids.type} className="sr-only">Consultation type</label>
+                  <select
+                    id={ids.type}
+                    value={form.type}
+                    onChange={set('type')}
+                    className={INPUT_CLASS}
+                    style={{
+                      ...inp, cursor: 'pointer', appearance: 'none',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23D4AF37' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center', paddingRight: '2.5rem',
+                    }}
+                  >
+                    {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+
+                  {error && (
+                    <div id={ids.error} role="alert" style={{ fontSize: '0.8rem', color: '#B42318', lineHeight: 1.5 }}>
+                      <p>{error}</p>
+                      <p style={{ marginTop: '0.35rem', color: 'rgba(28,18,9,0.70)' }}>
+                        You can also{' '}
+                        <a
+                          href={whatsappLink(whatsappNumber, bookingMessage(form))}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2 font-semibold"
+                          style={{ color: '#7A5C3B' }}
+                        >
+                          send your details on WhatsApp
+                        </a>
+                        .
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="transition-all hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2"
+                    style={{
+                      ...GOLD_BUTTON,
+                      marginTop: '0.35rem',
+                      boxShadow: loading ? 'none' : GOLD_GLOW,
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      opacity: loading ? 0.6 : 1,
+                    }}
+                  >
+                    {loading ? 'Sending…' : 'Book on WhatsApp'}
+                  </button>
+                </form>
+              </>
+            )}
 
             <div style={{ borderTop: '1px solid rgba(212,175,55,0.25)', marginTop: '1.25rem', paddingTop: '1rem', textAlign: 'center' }}>
               <Link
                 to="/consult"
-                style={{ color: '#8B5E0A', fontSize: '0.75rem', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3 }}
+                style={{ color: '#7A5C3B', fontSize: '0.75rem', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3 }}
               >
                 Full booking form with date &amp; time →
               </Link>

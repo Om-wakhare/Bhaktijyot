@@ -1,90 +1,119 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, useId } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import api from '../../services/apiClient';
+import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
-import { useCart } from '../../services/cart';
+import {
+  useCart,
+  formatINR,
+  maxQuantityFor,
+  normalizeStock,
+  validPrice,
+} from '../../services/cart';
+import { useWhatsAppNumber, whatsappLink } from '../../services/siteConfig';
+import { useDialog } from '../../hooks/useDialog';
 import { StarRating } from '../../components/ui/StarRating';
 import { WishlistButton } from '../../components/ui/WishlistButton';
 import { ProductCard } from '../../components/ui/ProductCard';
-
-function WhatsAppIcon({ className = 'h-4 w-4' }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.890-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-    </svg>
-  );
-}
+import { WhatsAppIcon } from '../../components/ui/WhatsAppIcon';
 
 function StockBadge({ stock }) {
-  if (stock === -1 || stock === undefined || stock === null) {
-    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1">✓ In Stock</span>;
+  const s = normalizeStock(stock);
+  if (s === 0) {
+    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-3 py-1"><span aria-hidden="true">✕</span> Out of Stock</span>;
   }
-  if (stock === 0) {
-    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-3 py-1">✕ Out of Stock</span>;
+  if (s > 0 && s <= 5) {
+    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-dark bg-amber-50 border border-amber-200 rounded-full px-3 py-1"><span aria-hidden="true">⚡</span> Only {s} left!</span>;
   }
-  if (stock <= 5) {
-    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber bg-amber-50 border border-amber-200 rounded-full px-3 py-1">⚡ Only {stock} left!</span>;
-  }
-  return <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1">✓ In Stock</span>;
+  return <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1"><span aria-hidden="true">✓</span> In Stock</span>;
 }
 
+const REVIEW_LIMIT = 5;
+const EMPTY_REVIEW = { reviewer_name: '', rating: 5, title: '', comment: '' };
+const INPUT_CLASS =
+  'w-full rounded-lg border border-cream-200 px-3 py-2 text-sm bg-white text-espresso focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary';
+
 function ReviewsSection({ productId }) {
+  const uid = useId();
+  const ids = {
+    heading: `${uid}-heading`,
+    name: `${uid}-name`,
+    rating: `${uid}-rating`,
+    title: `${uid}-title`,
+    comment: `${uid}-comment`,
+  };
+
   const [reviews, setReviews] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [form, setForm] = useState({ reviewer_name: '', rating: 5, title: '', comment: '' });
+  const [form, setForm] = useState(EMPTY_REVIEW);
 
-  const LIMIT = 5;
-
-  const loadReviews = useCallback(async (p = 1) => {
+  useEffect(() => {
+    let stale = false;
     setLoading(true);
-    try {
-      const res = await api.get(`/reviews/product/${productId}`, { params: { page: p, limit: LIMIT } });
-      setReviews(res.data.items || []);
-      setTotal(res.data.total || 0);
-    } finally {
-      setLoading(false);
-    }
-  }, [productId]);
-
-  useEffect(() => { loadReviews(page); }, [page, loadReviews]);
+    setLoadError('');
+    api
+      .get(`/reviews/product/${productId}`, { params: { page, limit: REVIEW_LIMIT } })
+      .then((res) => {
+        if (stale) return;
+        setReviews(res.data?.items || []);
+        setTotal(res.data?.total || 0);
+      })
+      .catch((err) => {
+        if (!stale) setLoadError(getErrorMessage(err, 'We couldn’t load reviews right now.'));
+      })
+      .finally(() => {
+        if (!stale) setLoading(false);
+      });
+    return () => { stale = true; };
+  }, [productId, page, reloadKey]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.reviewer_name || !form.comment) return;
+    if (submitting) return;
+    const reviewer_name = form.reviewer_name.trim();
+    const comment = form.comment.trim();
+    if (!reviewer_name || !comment) {
+      setSubmitError('Please enter your name and a comment.');
+      return;
+    }
     setSubmitting(true);
     setSubmitError('');
     try {
       await api.post(`/reviews/product/${productId}`, {
-        reviewer_name: form.reviewer_name,
+        reviewer_name,
         rating: form.rating,
-        title: form.title || undefined,
-        comment: form.comment,
+        title: form.title.trim() || undefined,
+        comment,
       });
       setSubmitted(true);
       setShowForm(false);
-      setForm({ reviewer_name: '', rating: 5, title: '', comment: '' });
-    } catch {
-      setSubmitError('Failed to submit review. Please try again.');
+      setForm(EMPTY_REVIEW);
+    } catch (err) {
+      setSubmitError(getErrorMessage(err, 'We couldn’t submit your review. Please try again.'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const totalPages = Math.ceil(total / REVIEW_LIMIT);
+
   return (
-    <div className="mt-10 border-t border-cream-200 pt-8 space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-espresso">Customer Reviews</h2>
+    <section aria-labelledby={ids.heading} className="mt-10 border-t border-cream-200 pt-8 space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id={ids.heading} className="text-lg font-semibold text-espresso">Customer Reviews</h2>
         <button
           type="button"
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => { setShowForm((v) => !v); setSubmitted(false); setSubmitError(''); }}
+          aria-expanded={showForm}
           className="text-xs font-semibold text-primary border border-primary rounded-full px-4 py-2 hover:bg-primary hover:text-white transition-colors"
         >
           {showForm ? 'Cancel' : 'Write a Review'}
@@ -92,57 +121,72 @@ function ReviewsSection({ productId }) {
       </div>
 
       {submitted && (
-        <div className="bg-primary/10 border border-primary/20 text-primary text-sm rounded-xl px-4 py-3">
-          ✓ Thank you! Your review has been submitted and will appear after approval.
+        <div role="status" className="bg-primary/10 border border-primary/20 text-primary text-sm rounded-xl px-4 py-3">
+          <span aria-hidden="true">✓ </span>Thank you! Your review has been submitted. It will appear here once our team has approved it.
         </div>
       )}
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-cream border border-cream-200 rounded-xl p-4 space-y-3">
+        <form onSubmit={handleSubmit} className="bg-cream border border-cream-200 rounded-xl p-4 space-y-3" noValidate>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-espresso mb-1">Your Name *</label>
+              <label htmlFor={ids.name} className="block text-xs font-semibold text-espresso mb-1">
+                Your Name <span aria-hidden="true">*</span>
+              </label>
               <input
+                id={ids.name}
                 value={form.reviewer_name}
                 onChange={(e) => setForm((p) => ({ ...p, reviewer_name: e.target.value }))}
                 required
+                maxLength={255}
+                autoComplete="name"
                 placeholder="Your name"
-                className="w-full rounded-lg border border-cream-200 px-3 py-2 text-sm bg-white text-espresso focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                className={INPUT_CLASS}
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-espresso mb-1">Rating *</label>
+              <span id={ids.rating} className="block text-xs font-semibold text-espresso mb-1">
+                Rating <span aria-hidden="true">*</span>
+              </span>
               <div className="flex items-center gap-2 h-9">
                 <StarRating
                   value={form.rating}
                   size="md"
                   interactive
+                  labelledBy={ids.rating}
                   onChange={(v) => setForm((p) => ({ ...p, rating: v }))}
                 />
-                <span className="text-xs text-espresso/50">{form.rating}/5</span>
+                <span className="text-xs text-espresso/60" aria-hidden="true">{form.rating}/5</span>
               </div>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-espresso mb-1">Review Title</label>
+            <label htmlFor={ids.title} className="block text-xs font-semibold text-espresso mb-1">Review Title</label>
             <input
+              id={ids.title}
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              maxLength={255}
               placeholder="One-line summary (optional)"
-              className="w-full rounded-lg border border-cream-200 px-3 py-2 text-sm bg-white text-espresso focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              className={INPUT_CLASS}
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-espresso mb-1">Comment *</label>
+            <label htmlFor={ids.comment} className="block text-xs font-semibold text-espresso mb-1">
+              Comment <span aria-hidden="true">*</span>
+            </label>
             <textarea
+              id={ids.comment}
               value={form.comment}
               onChange={(e) => setForm((p) => ({ ...p, comment: e.target.value }))}
               required
+              maxLength={3000}
               rows={3}
               placeholder="Share your experience..."
-              className="w-full rounded-lg border border-cream-200 px-3 py-2 text-sm bg-white text-espresso focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+              className={`${INPUT_CLASS} resize-none`}
             />
           </div>
+          <p className="text-[11px] text-espresso/55">Reviews are published after a quick check by our team.</p>
           <button
             type="submit"
             disabled={submitting}
@@ -151,19 +195,30 @@ function ReviewsSection({ productId }) {
             {submitting ? 'Submitting...' : 'Submit Review'}
           </button>
           {submitError && (
-            <p className="text-xs text-red-600 mt-1">{submitError}</p>
+            <p role="alert" className="text-xs text-red-700 mt-1">{submitError}</p>
           )}
         </form>
       )}
 
       {loading ? (
-        <div className="text-sm text-espresso/50">Loading reviews...</div>
+        <div className="text-sm text-espresso/60" role="status">Loading reviews...</div>
+      ) : loadError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-espresso/70">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="px-3 py-1.5 rounded-full border border-cream-200 bg-white text-xs font-semibold text-primary hover:border-primary transition-colors"
+          >
+            Try again
+          </button>
+        </div>
       ) : reviews.length === 0 ? (
-        <div className="text-sm text-espresso/50 py-4">No reviews yet. Be the first to review!</div>
+        <div className="text-sm text-espresso/60 py-4">No reviews yet. Be the first to review!</div>
       ) : (
-        <div className="space-y-4">
+        <ul className="space-y-4">
           {reviews.map((r) => (
-            <div key={r.id} className="bg-white border border-cream-200 rounded-xl p-4 space-y-1">
+            <li key={r.id} className="bg-white border border-cream-200 rounded-xl p-4 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <StarRating value={r.rating} size="sm" />
                 {r.is_verified_offline && (
@@ -173,55 +228,64 @@ function ReviewsSection({ productId }) {
                 )}
               </div>
               {r.title && <div className="text-sm font-semibold text-espresso">{r.title}</div>}
-              <div className="text-sm text-espresso/70">{r.comment}</div>
-              <div className="text-xs text-espresso/40">— {r.reviewer_name} &nbsp;·&nbsp; {new Date(r.created_at).toLocaleDateString('en-IN')}</div>
-            </div>
+              <div className="text-sm text-espresso/75 whitespace-pre-line">{r.comment}</div>
+              <div className="text-xs text-espresso/50">
+                — {r.reviewer_name}
+                {r.created_at && (
+                  <> &nbsp;·&nbsp; {new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</>
+                )}
+              </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
-      {Math.ceil(total / LIMIT) > 1 && (
-        <div className="flex items-center gap-3">
+      {totalPages > 1 && (
+        <nav className="flex items-center gap-3" aria-label="Review pages">
           <button
             type="button"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
+            disabled={page <= 1 || loading}
+            onClick={() => setPage((p) => p - 1)}
             className="px-3 py-1.5 rounded-full border border-cream-200 text-xs font-semibold disabled:opacity-40 hover:border-primary hover:text-primary transition-colors"
           >
-            ← Prev
+            <span aria-hidden="true">← </span>Prev
           </button>
-          <span className="text-xs text-espresso/50">Page {page} of {Math.ceil(total / LIMIT)}</span>
+          <span className="text-xs text-espresso/60">Page {page} of {totalPages}</span>
           <button
             type="button"
-            disabled={page >= Math.ceil(total / LIMIT)}
-            onClick={() => setPage(page + 1)}
+            disabled={page >= totalPages || loading}
+            onClick={() => setPage((p) => p + 1)}
             className="px-3 py-1.5 rounded-full border border-cream-200 text-xs font-semibold disabled:opacity-40 hover:border-primary hover:text-primary transition-colors"
           >
-            Next →
+            Next<span aria-hidden="true"> →</span>
           </button>
-        </div>
+        </nav>
       )}
-    </div>
+    </section>
   );
 }
 
 function ImageGallery({ product }) {
+  // images[0] is always the primary image; fall back to the legacy single image_path
   const allImages = product.images && product.images.length > 0
     ? product.images
     : product.image_path
       ? [{ id: 0, image_path: product.image_path, sort_order: 0 }]
       : [];
 
-  const [activeIdx, setActiveIdx]     = useState(0);
+  const [activeIdx, setActiveIdx]       = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const active = allImages[activeIdx];
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+  const lightboxRef = useDialog(lightboxOpen, closeLightbox);
+  const safeIdx = activeIdx < allImages.length ? activeIdx : 0;
+  const active = allImages[safeIdx];
 
+  // Arrow keys flip through images while the lightbox is open (Escape is handled by useDialog)
   useEffect(() => {
-    if (!lightboxOpen) return;
+    if (!lightboxOpen || allImages.length < 2) return undefined;
     const onKey = (e) => {
-      if (e.key === 'Escape')      { setLightboxOpen(false); return; }
-      if (e.key === 'ArrowRight')  setActiveIdx((i) => (i + 1) % allImages.length);
-      if (e.key === 'ArrowLeft')   setActiveIdx((i) => (i - 1 + allImages.length) % allImages.length);
+      if (e.key === 'ArrowRight') setActiveIdx((i) => (i + 1) % allImages.length);
+      if (e.key === 'ArrowLeft')  setActiveIdx((i) => (i - 1 + allImages.length) % allImages.length);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -229,7 +293,8 @@ function ImageGallery({ product }) {
 
   if (allImages.length === 0) {
     return (
-      <div className="w-full h-72 bg-cream rounded-2xl flex items-center justify-center text-sm text-espresso/40">
+      <div className="w-full aspect-square rounded-2xl flex items-center justify-center text-sm text-espresso/50"
+           style={{ background: '#FAF3EC', border: '1.5px solid rgba(201,168,76,0.22)' }}>
         No image available
       </div>
     );
@@ -240,15 +305,20 @@ function ImageGallery({ product }) {
       {lightboxOpen && (
         <motion.div
           key="bj-lightbox"
+          ref={lightboxRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${product.name} — image ${safeIdx + 1} of ${allImages.length}`}
+          tabIndex={-1}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.22 }}
-          onClick={() => setLightboxOpen(false)}
+          onClick={closeLightbox}
           style={LB_OVERLAY}
         >
           <motion.img
-            key={activeIdx}
+            key={safeIdx}
             initial={{ scale: 0.94, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.94, opacity: 0 }}
@@ -263,11 +333,11 @@ function ImageGallery({ product }) {
           {/* Close */}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setLightboxOpen(false); }}
-            aria-label="Close lightbox"
+            onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
+            aria-label="Close image viewer"
             style={LB_CLOSE_BTN}
           >
-            ✕
+            <span aria-hidden="true">✕</span>
           </button>
 
           {/* Prev / Next */}
@@ -279,7 +349,7 @@ function ImageGallery({ product }) {
                 aria-label="Previous image"
                 style={LB_PREV_BTN}
               >
-                ‹
+                <span aria-hidden="true">‹</span>
               </button>
               <button
                 type="button"
@@ -287,12 +357,12 @@ function ImageGallery({ product }) {
                 aria-label="Next image"
                 style={LB_NEXT_BTN}
               >
-                ›
+                <span aria-hidden="true">›</span>
               </button>
 
               {/* Counter */}
-              <div style={LB_COUNTER}>
-                {activeIdx + 1} / {allImages.length}
+              <div style={LB_COUNTER} aria-hidden="true">
+                {safeIdx + 1} / {allImages.length}
               </div>
             </>
           )}
@@ -305,22 +375,22 @@ function ImageGallery({ product }) {
   return (
     <>
       <div className="space-y-3">
+        {/* Main image — a square frame the photo fills (contained, never cropped) */}
         <button
           type="button"
-          className="w-full group relative overflow-hidden"
+          className="group relative block w-full aspect-square overflow-hidden"
           onClick={() => setLightboxOpen(true)}
-          aria-label="Open image fullscreen"
-          style={{ borderRadius: '16px', border: '1.5px solid rgba(201,168,76,0.22)', background: '#F0E4CE', cursor: 'zoom-in' }}
+          aria-label={`Open ${product.name} image ${safeIdx + 1} fullscreen`}
+          style={{ borderRadius: '16px', border: '1.5px solid rgba(201,168,76,0.22)', background: '#FAF3EC', cursor: 'zoom-in' }}
         >
-          <div className="aspect-square max-h-96 overflow-hidden" style={{ borderRadius: '14px' }}>
-            <img
-              src={mediaUrl(active.image_path)}
-              alt={product.name}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-            />
-          </div>
+          <img
+            src={mediaUrl(active.image_path)}
+            alt=""
+            className="absolute inset-0 h-full w-full object-contain object-center transition-transform duration-500 group-hover:scale-105"
+          />
           {/* Expand hint */}
-          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200"
+               aria-hidden="true"
                style={{
                  background: 'rgba(14,7,2,0.72)',
                  backdropFilter: 'blur(4px)',
@@ -339,24 +409,24 @@ function ImageGallery({ product }) {
           <div className="flex gap-2 overflow-x-auto pb-1">
             {allImages.map((img, idx) => (
               <button
-                key={img.id}
+                key={img.id ?? idx}
                 type="button"
                 onClick={() => setActiveIdx(idx)}
-                aria-label={`View image ${idx + 1}`}
-                aria-pressed={idx === activeIdx}
+                aria-label={`Show image ${idx + 1} of ${allImages.length}`}
+                aria-pressed={idx === safeIdx}
                 style={{
                   flexShrink: 0,
                   width: 64, height: 64,
                   borderRadius: 10,
                   overflow: 'hidden',
-                  border: `2px solid ${idx === activeIdx ? '#C9A84C' : 'rgba(28,18,9,0.12)'}`,
+                  border: `2px solid ${idx === safeIdx ? '#C9A84C' : 'rgba(28,18,9,0.12)'}`,
                   transition: 'border-color 0.2s',
                   cursor: 'pointer',
                   background: '#F0E4CE',
                   padding: 0,
                 }}
               >
-                <img src={mediaUrl(img.image_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <img src={mediaUrl(img.image_path)} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               </button>
             ))}
           </div>
@@ -371,29 +441,32 @@ function RelatedProducts({ categoryId, currentProductId }) {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
-    if (!categoryId) return;
+    if (!categoryId) { setProducts([]); return undefined; }
+    let stale = false;
     api.get('/products/catalog', { params: { category_id: categoryId, limit: 5 } })
       .then((res) => {
-        const items = (res.data.items || []).filter((p) => p.id !== currentProductId).slice(0, 4);
+        if (stale) return;
+        const items = (res.data?.items || []).filter((p) => p.id !== currentProductId).slice(0, 4);
         setProducts(items);
       })
-      .catch(() => {});
+      .catch(() => { if (!stale) setProducts([]); });
+    return () => { stale = true; };
   }, [categoryId, currentProductId]);
 
   if (products.length === 0) return null;
 
   return (
-    <div className="mt-12 border-t border-cream-200 pt-10 space-y-5">
+    <section className="mt-12 border-t border-cream-200 pt-10 space-y-5" aria-labelledby="related-heading">
       <div className="space-y-1">
-        <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: '#C9A84C' }}>Discover More</div>
-        <h2 className="font-display text-xl font-semibold" style={{ color: '#1C1209' }}>You May Also Like</h2>
+        <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: '#A8840A' }}>Discover More</div>
+        <h2 id="related-heading" className="font-display text-xl font-semibold" style={{ color: '#1C1209' }}>You May Also Like</h2>
       </div>
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {products.map((p, i) => (
           <ProductCard key={p.id} product={p} index={i} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -405,6 +478,7 @@ const LB_OVERLAY = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+  outline: 'none',
 };
 const LB_CLOSE_BTN = {
   position: 'absolute', top: 20, right: 20,
@@ -447,52 +521,58 @@ const TRUST_BADGES = [
 export function ProductDetailPage() {
   const { id } = useParams();
   const [product, setProduct] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState('loading'); // loading | ready | notfound | error
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [qty, setQty] = useState(1);
-  const [added, setAdded] = useState(false);
+  const [addState, setAddState] = useState(null); // 'added' | 'max' | null
   const { addItem } = useCart();
-  const [whatsappNumber, setWhatsappNumber] = useState('918484913170');
+  const whatsappNumber = useWhatsAppNumber();
   const addedTimer = useRef(null);
+  const qtyLabelId = useId();
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [productRes, configRes] = await Promise.all([
-          api.get(`/products/${id}`),
-          api.get('/site-config'),
-        ]);
-        setProduct(productRes.data);
-        if (configRes.data?.whatsapp_number) setWhatsappNumber(configRes.data.whatsapp_number);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [id]);
-
-  const maxQty = product ? (product.stock === -1 ? 99 : product.stock) : 1;
-  const outOfStock = product && product.stock !== -1 && product.stock === 0;
-
-  const handleAddToCart = () => {
-    if (!product || outOfStock) return;
-    addItem(product, qty);
-    setAdded(true);
-    clearTimeout(addedTimer.current);
-    addedTimer.current = setTimeout(() => setAdded(false), 2000);
-  };
+    let stale = false;
+    setStatus('loading');
+    setProduct(null);
+    setQty(1);
+    setAddState(null);
+    api.get(`/products/${encodeURIComponent(id)}`)
+      .then((res) => {
+        if (stale) return;
+        setProduct(res.data);
+        setStatus('ready');
+      })
+      .catch((err) => {
+        if (stale) return;
+        const code = err?.response?.status;
+        if (code === 404 || code === 422) {
+          setStatus('notfound'); // unknown id, or a draft that isn't public
+        } else {
+          setLoadError(getErrorMessage(err, 'We couldn’t load this product.'));
+          setStatus('error');
+        }
+      });
+    return () => { stale = true; };
+  }, [id, reloadKey]);
 
   useEffect(() => () => clearTimeout(addedTimer.current), []);
 
   // NOTE: every hook must run before the early returns below — calling a hook
   // only after loading finishes changes the hook count and crashes React (#310).
   const productName = product?.name || '';
-  const waMessage = useMemo(() => encodeURIComponent(
-    `Namaste! I'm interested in this product from Bhaktijyot:\n\n*${productName}*\n\n${window.location.href}`,
-  ), [productName]);
+  const priceKnown = validPrice(product?.price) !== null;
+  const waHref = useMemo(() => whatsappLink(
+    whatsappNumber,
+    priceKnown
+      ? `Namaste! I'm interested in this product from Bhaktijyot:\n\n*${productName}*\n\n${window.location.href}`
+      : `Namaste! I'd like to know the price of this product from Bhaktijyot:\n\n*${productName}*\n\n${window.location.href}`,
+  ), [whatsappNumber, productName, priceKnown, id]); // `id` → the page URL changed
 
-  if (loading) {
+  if (status === 'loading') {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid gap-8 md:grid-cols-2 animate-pulse">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid gap-8 md:grid-cols-2 animate-pulse" aria-busy="true">
+        <span className="sr-only" role="status">Loading product…</span>
         <div className="space-y-3">
           <div className="aspect-square bg-cream-200 rounded-2xl" />
           <div className="flex gap-2">
@@ -508,52 +588,106 @@ export function ProductDetailPage() {
     );
   }
 
-  if (!product) {
+  if (status === 'notfound') {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
-        <div className="text-sm text-red-500">Product not found.</div>
-        <Link to="/products" className="mt-4 inline-block text-xs text-primary hover:underline">← Back to products</Link>
+      <div className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center space-y-3">
+        <h1 className="font-display text-3xl font-semibold text-espresso">Product not found</h1>
+        <p className="text-sm text-espresso/60">
+          This product may have been removed or isn&apos;t available right now.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+          <Link to="/products" className="px-6 py-2.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">
+            Browse Products
+          </Link>
+          <a href={whatsappLink(whatsappNumber)} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/8 transition-colors">
+            <WhatsAppIcon className="h-4 w-4" />
+            Ask on WhatsApp
+          </a>
+        </div>
       </div>
     );
   }
 
-  const hasDiscount = product.mrp && product.price && Number(product.mrp) > Number(product.price);
-  const discountPct = hasDiscount ? Math.round(((Number(product.mrp) - Number(product.price)) / Number(product.mrp)) * 100) : 0;
+  if (status === 'error' || !product) {
+    return (
+      <div role="alert" className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center space-y-3">
+        <h1 className="font-display text-2xl font-semibold text-espresso">Something went wrong</h1>
+        <p className="text-sm text-espresso/70">{loadError || 'We couldn’t load this product.'}</p>
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="px-6 py-2.5 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors"
+          >
+            Try again
+          </button>
+          <Link to="/products" className="px-6 py-2.5 rounded-full border border-espresso/20 text-espresso text-sm font-semibold hover:border-primary hover:text-primary transition-colors">
+            Back to products
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const price = validPrice(product.price);
+  const mrp = validPrice(product.mrp);
+  const hasDiscount = price !== null && mrp !== null && mrp > price;
+  const discountPct = hasDiscount ? Math.round(((mrp - price) / mrp) * 100) : 0;
+  const outOfStock = normalizeStock(product.stock) === 0;
+  const canBuy = price !== null && !outOfStock;
+  const maxQty = Math.max(1, maxQuantityFor(product.stock));
+
+  const handleAddToCart = () => {
+    if (!canBuy) return;
+    const ok = addItem(product, qty);
+    setAddState(ok ? 'added' : 'max');
+    clearTimeout(addedTimer.current);
+    addedTimer.current = setTimeout(() => setAddState(null), ok ? 2500 : 4000);
+  };
+
+  const addBtnClass = (extra) => `${extra} transition-colors ${
+    !canBuy
+      ? 'bg-cream-200 text-espresso/50 cursor-not-allowed'
+      : addState === 'added'
+      ? 'bg-primary/90 text-white'
+      : 'bg-primary text-white hover:bg-primary-dark'
+  }`;
 
   return (
     <>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 pb-28 md:pb-10">
 
         {/* Breadcrumb */}
-        <nav className="text-xs text-espresso/40 flex items-center gap-1 flex-wrap">
+        <nav aria-label="Breadcrumb" className="text-xs text-espresso/55 flex items-center gap-1 flex-wrap">
           <Link to="/" className="hover:text-primary transition-colors">Home</Link>
-          <span>›</span>
+          <span aria-hidden="true">›</span>
           <Link to="/products" className="hover:text-primary transition-colors">Products</Link>
           {product.category && (
             <>
-              <span>›</span>
-              <Link to={`/products?categoryId=${product.category?.id}`} className="hover:text-primary transition-colors">
-                {product.category?.name}
+              <span aria-hidden="true">›</span>
+              <Link to={`/products?categoryId=${product.category.id}`} className="hover:text-primary transition-colors">
+                {product.category.name}
               </Link>
             </>
           )}
-          <span>›</span>
-          <span className="text-espresso font-medium truncate max-w-[180px]">{product.name}</span>
+          <span aria-hidden="true">›</span>
+          <span className="text-espresso font-medium truncate max-w-[180px]" aria-current="page">{product.name}</span>
         </nav>
 
         <div className="grid gap-8 md:grid-cols-[1.1fr,1fr] items-start">
           {/* Left — Images + Video */}
-          <div className="space-y-4">
-            <ImageGallery product={product} />
+          <div className="space-y-4 min-w-0">
+            <ImageGallery key={product.id} product={product} />
             {product.video_path && (
-              <video controls className="w-full rounded-xl border border-cream-200 max-h-72 bg-espresso">
+              <video controls preload="metadata" className="w-full rounded-xl border border-cream-200 max-h-72 bg-espresso">
                 <source src={mediaUrl(product.video_path)} />
               </video>
             )}
           </div>
 
-          {/* Right — Details (sticky) */}
-          <div className="space-y-4" style={{ position: 'sticky', top: '80px', alignSelf: 'start' }}>
+          {/* Right — Details (sticky below the header: 80px mobile bar on md, 112px desktop header on lg) */}
+          <div className="space-y-4 min-w-0 md:sticky md:top-24 lg:top-32 md:self-start">
             <div>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
@@ -571,31 +705,41 @@ export function ProductDetailPage() {
                     </span>
                   )}
                 </div>
-                <WishlistButton productId={product.id} size="md" className="h-10 w-10 shrink-0 shadow-sm border border-cream-200" />
+                <WishlistButton
+                  productId={product.id}
+                  productName={product.name}
+                  size="md"
+                  className="h-10 w-10 shrink-0 shadow-sm border border-cream-200"
+                />
               </div>
 
               {product.rating_count > 0 && (
                 <div className="mt-2 flex items-center gap-2">
                   <StarRating value={product.rating_avg ?? 0} size="md" />
-                  <span className="text-sm text-espresso/60">
-                    {Number(product.rating_avg ?? 0).toFixed(1)} ({product.rating_count} reviews)
+                  <span className="text-sm text-espresso/70">
+                    {Number(product.rating_avg ?? 0).toFixed(1)} ({product.rating_count} review{product.rating_count === 1 ? '' : 's'})
                   </span>
                 </div>
               )}
 
               <div className="mt-3 flex items-center gap-3 flex-wrap">
-                {product.price !== null && product.price !== undefined && (
-                  <span className="text-2xl font-bold text-gold">
-                    ₹ {Number(product.price).toLocaleString('en-IN')}
-                  </span>
+                {price !== null ? (
+                  <span className="text-2xl font-bold text-primary">{formatINR(price)}</span>
+                ) : (
+                  <span className="text-xl font-semibold text-primary">Price on request</span>
                 )}
                 {hasDiscount && (
                   <>
-                    <span className="text-base text-espresso/40 line-through">₹ {Number(product.mrp).toLocaleString('en-IN')}</span>
-                    <span className="text-sm font-bold text-amber bg-amber-50 px-2 py-0.5 rounded-full">{discountPct}% OFF</span>
+                    <span className="text-base text-espresso/50 line-through">
+                      <span className="sr-only">MRP </span>{formatINR(mrp)}
+                    </span>
+                    <span className="text-sm font-bold text-amber-dark bg-amber-50 px-2 py-0.5 rounded-full">{discountPct}% OFF</span>
                   </>
                 )}
               </div>
+              {price === null && (
+                <p className="mt-1 text-xs text-espresso/60">Message us on WhatsApp for the current price and availability.</p>
+              )}
 
               <div className="mt-2">
                 <StockBadge stock={product.stock} />
@@ -605,135 +749,164 @@ export function ProductDetailPage() {
             {product.description && (
               <div>
                 <h2 className="text-sm font-semibold text-espresso mb-1">Description</h2>
-                <p className="text-sm text-espresso/70 whitespace-pre-line leading-relaxed">{product.description}</p>
+                <p className="text-sm text-espresso/75 whitespace-pre-line leading-relaxed">{product.description}</p>
               </div>
             )}
 
             {product.benefits && (
               <div>
                 <h2 className="text-sm font-semibold text-espresso mb-1">Benefits</h2>
-                <p className="text-sm text-espresso/70 whitespace-pre-line leading-relaxed">{product.benefits}</p>
+                <p className="text-sm text-espresso/75 whitespace-pre-line leading-relaxed">{product.benefits}</p>
               </div>
             )}
 
-            {product.price !== null && product.price !== undefined && (
-              <div className="space-y-3">
-                {/* Quantity picker */}
+            <div className="space-y-3">
+              {/* Quantity picker */}
+              {canBuy && (
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-espresso">Quantity:</span>
-                  <div className="flex items-center border border-cream-200 rounded-full overflow-hidden bg-white">
+                  <span id={qtyLabelId} className="text-sm font-semibold text-espresso">Quantity:</span>
+                  <div role="group" aria-labelledby={qtyLabelId} className="flex items-center border border-cream-200 rounded-full overflow-hidden bg-white">
                     <button
                       type="button"
                       onClick={() => setQty((q) => Math.max(1, q - 1))}
                       disabled={qty <= 1}
+                      aria-label="Decrease quantity"
                       className="px-4 py-2 text-sm font-semibold text-espresso hover:bg-cream disabled:opacity-40"
                     >
                       −
                     </button>
-                    <span className="px-4 py-2 text-sm font-bold text-espresso border-x border-cream-200 min-w-[48px] text-center">
+                    <span className="px-4 py-2 text-sm font-bold text-espresso border-x border-cream-200 min-w-[48px] text-center" aria-live="polite">
                       {qty}
                     </span>
                     <button
                       type="button"
                       onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
-                      disabled={qty >= maxQty || outOfStock}
+                      disabled={qty >= maxQty}
+                      aria-label="Increase quantity"
                       className="px-4 py-2 text-sm font-semibold text-espresso hover:bg-cream disabled:opacity-40"
                     >
                       +
                     </button>
                   </div>
                 </div>
+              )}
 
-                {/* CTA buttons — desktop */}
-                <div className="hidden md:flex flex-col gap-3">
+              {/* CTA buttons — desktop */}
+              <div className="hidden md:flex flex-col gap-3">
+                {price !== null && (
                   <button
                     type="button"
                     onClick={handleAddToCart}
-                    disabled={outOfStock}
-                    className={`w-full inline-flex items-center justify-center px-6 py-3.5 rounded-full text-sm font-semibold transition-colors ${
-                      outOfStock
-                        ? 'bg-cream-200 text-espresso/40 cursor-not-allowed'
-                        : added
-                        ? 'bg-primary/90 text-white'
-                        : 'bg-primary text-white hover:bg-primary-dark'
-                    }`}
+                    disabled={!canBuy}
+                    className={addBtnClass('w-full inline-flex items-center justify-center px-6 py-3.5 rounded-full text-sm font-semibold')}
                   >
-                    {outOfStock ? 'Out of Stock' : added ? '✓ Added to Cart' : 'Add to Cart'}
+                    {outOfStock
+                      ? 'Out of Stock'
+                      : addState === 'added'
+                      ? '✓ Added to Cart'
+                      : addState === 'max'
+                      ? 'Maximum quantity in cart'
+                      : 'Add to Cart'}
                   </button>
-                  <a
-                    href={`https://wa.me/${whatsappNumber}?text=${waMessage}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-full bg-[#25D366] text-white text-sm font-semibold hover:bg-[#1ebe5d] transition-colors"
-                  >
-                    <WhatsAppIcon />
-                    Enquire on WhatsApp
-                  </a>
-
-                  {/* Trust badges */}
-                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
-                    {TRUST_BADGES.map((t) => (
-                      <span
-                        key={t.label}
-                        className="flex items-center gap-1.5 text-[11px] font-semibold"
-                        style={{ color: '#A8840A' }}
-                      >
-                        <span>{t.icon}</span>
-                        {t.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {added && (
-                  <Link to="/cart" className="hidden md:inline-flex text-xs text-primary font-semibold hover:underline">
-                    View Cart →
-                  </Link>
                 )}
+                <a
+                  href={waHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-full bg-[#25D366] text-white text-sm font-semibold hover:bg-[#1ebe5d] transition-colors"
+                >
+                  <WhatsAppIcon />
+                  Enquire on WhatsApp
+                </a>
+
+                {/* Trust badges */}
+                <ul className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+                  {TRUST_BADGES.map((t) => (
+                    <li
+                      key={t.label}
+                      className="flex items-center gap-1.5 text-[11px] font-semibold"
+                      style={{ color: '#A8840A' }}
+                    >
+                      <span aria-hidden="true">{t.icon}</span>
+                      {t.label}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            )}
+
+              {addState === 'added' && (
+                <Link to="/cart" className="hidden md:inline-flex text-xs text-primary font-semibold hover:underline">
+                  View Cart →
+                </Link>
+              )}
+              {addState === 'max' && (
+                <p className="text-xs text-espresso/70">
+                  You already have the maximum available quantity of this item in your cart.{' '}
+                  <Link to="/cart" className="font-semibold text-primary hover:underline">View cart</Link>
+                </p>
+              )}
+              <span className="sr-only" aria-live="polite">
+                {addState === 'added' ? `${product.name} added to cart` : ''}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Reviews */}
-        <ReviewsSection productId={id} />
+        <ReviewsSection key={product.id} productId={product.id} />
 
         {/* Related Products */}
         <RelatedProducts categoryId={product.category?.id} currentProductId={product.id} />
       </div>
 
-      {/* Sticky bottom bar — mobile only */}
-      {product.price !== null && product.price !== undefined && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-cream-200 px-4 py-3 flex items-center gap-3 shadow-lg">
-          <div className="flex-1">
-            <div className="text-xs text-espresso/50">Price</div>
-            <div className="text-base font-bold text-gold">₹ {Number(product.price).toLocaleString('en-IN')}</div>
-          </div>
-          <a
-            href={`https://wa.me/${whatsappNumber}?text=${waMessage}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-full bg-[#25D366] text-white text-sm font-semibold shrink-0"
-          >
-            <WhatsAppIcon className="h-3.5 w-3.5" />
-            Enquire
-          </a>
-          <button
-            type="button"
-            onClick={handleAddToCart}
-            disabled={outOfStock}
-            className={`flex-1 py-3 rounded-full text-sm font-semibold transition-colors ${
-              outOfStock
-                ? 'bg-cream-200 text-espresso/40 cursor-not-allowed'
-                : added
-                ? 'bg-primary/90 text-white'
-                : 'bg-primary text-white hover:bg-primary-dark'
-            }`}
-          >
-            {outOfStock ? 'Out of Stock' : added ? '✓ Added' : 'Add to Cart'}
-          </button>
-        </div>
-      )}
+      {/* Sticky bottom bar — mobile only (FloatingWhatsApp hides itself here below md) */}
+      <div
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-cream-200 px-4 pt-3 flex items-center gap-3 shadow-lg"
+        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+      >
+        {price !== null ? (
+          <>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-espresso/60">Price</div>
+              <div className="text-base font-bold text-primary">{formatINR(price)}</div>
+            </div>
+            <a
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Enquire on WhatsApp"
+              className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-full bg-[#25D366] text-white text-sm font-semibold shrink-0"
+            >
+              <WhatsAppIcon className="h-3.5 w-3.5" />
+              Enquire
+            </a>
+            <button
+              type="button"
+              onClick={handleAddToCart}
+              disabled={!canBuy}
+              className={addBtnClass('flex-1 py-3 rounded-full text-sm font-semibold')}
+            >
+              {outOfStock ? 'Out of Stock' : addState === 'added' ? '✓ Added' : addState === 'max' ? 'Max in cart' : 'Add to Cart'}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-espresso/60">Price</div>
+              <div className="text-sm font-bold text-primary">On request</div>
+            </div>
+            <a
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-[2] flex items-center justify-center gap-2 py-3 rounded-full bg-[#25D366] text-white text-sm font-semibold"
+            >
+              <WhatsAppIcon className="h-4 w-4" />
+              Enquire on WhatsApp
+            </a>
+          </>
+        )}
+      </div>
     </>
   );
 }

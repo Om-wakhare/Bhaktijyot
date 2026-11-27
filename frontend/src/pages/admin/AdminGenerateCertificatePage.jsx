@@ -1,72 +1,156 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import api from '../../services/apiClient';
+import { useCallback, useEffect, useState } from 'react';
+import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
-import { Button, Card, Field, Input, Page, Textarea } from '../../components/admin/ui';
+import {
+  Alert, Button, Card, Field, FileInput, Input, Page, Textarea, cn,
+} from '../../components/admin/ui';
+import { useToast } from '../../components/admin/Toast';
+import { useConfirm } from '../../components/admin/ConfirmDialog';
+import { fileExt, formatBytes, formatDateTime } from '../../components/admin/adminUtils';
+
+const IMAGE_ACCEPT = '.png,.jpg,.jpeg,.webp';
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp'];
+const MAX_TEMPLATE_BYTES = 15 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 function pdfUrl(pngPath) {
-  if (!pngPath) return '';
+  if (!pngPath || !/\.png$/i.test(pngPath)) return '';
   return mediaUrl(pngPath.replace(/\.png$/i, '.pdf'));
 }
 
+/** Mirrors the server: template name = file stem with anything but letters/digits/space/-/_ turned into "-". */
+function templateNameFromFile(filename) {
+  const stem = String(filename || '').replace(/\.[^.]*$/, '');
+  return stem
+    .trim()
+    .replace(/[^A-Za-z0-9 _-]+/g, '-')
+    .replace(/^[ _-]+|[ _-]+$/g, '')
+    .slice(0, 80);
+}
+
+function imageFileError(file, maxBytes, what) {
+  if (!file) return '';
+  if (!IMAGE_EXTS.includes(fileExt(file.name))) return `${what} must be a PNG, JPG or WebP image.`;
+  if (file.size > maxBytes) return `${what} is too large (${formatBytes(file.size)}; max ${maxBytes / (1024 * 1024)} MB).`;
+  return '';
+}
+
 export function AdminGenerateCertificatePage() {
-  const navigate = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
 
   // ── Template management ──────────────────────────────────────────────────
   const [templates, setTemplates] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [templatesError, setTemplatesError] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [templateFile, setTemplateFile] = useState(null);
+  const [templateInputKey, setTemplateInputKey] = useState(0);
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
-  const [templateMsg, setTemplateMsg] = useState('');
+  const [templateMsg, setTemplateMsg] = useState(null); // { tone, text }
+  const [deletingTemplate, setDeletingTemplate] = useState('');
 
-  const fetchTemplates = async () => {
+  const fetchTemplates = useCallback(async () => {
+    setTemplatesLoading(true);
+    setTemplatesError('');
     try {
       const res = await api.get('/certificates/templates');
-      setTemplates(res.data);
-      if (res.data.length > 0 && !selectedTemplate) {
-        setSelectedTemplate(res.data[0].name);
-      }
-    } catch {
-      // ignore
+      const list = Array.isArray(res.data) ? res.data : [];
+      setTemplates(list);
+      // Keep the current choice if it still exists, otherwise pick the first template
+      setSelectedTemplate((prev) => (prev && list.some((t) => t.name === prev) ? prev : list[0]?.name ?? ''));
+      return list;
+    } catch (err) {
+      setTemplatesError(getErrorMessage(err, 'Could not load certificate templates.'));
+      return null;
+    } finally {
+      setTemplatesLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchTemplates(); }, []);
+  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
+
+  const onTemplateFileChange = (e) => {
+    const file = e.target.files?.[0] ?? null;
+    setTemplateMsg(null);
+    const err = imageFileError(file, MAX_TEMPLATE_BYTES, 'Template');
+    if (err) {
+      setTemplateMsg({ tone: 'error', text: err });
+      setTemplateFile(null);
+      setTemplateInputKey((k) => k + 1);
+      return;
+    }
+    if (file && !templateNameFromFile(file.name)) {
+      setTemplateMsg({ tone: 'error', text: 'Rename the file using letters, numbers, spaces, hyphens or underscores.' });
+      setTemplateFile(null);
+      setTemplateInputKey((k) => k + 1);
+      return;
+    }
+    setTemplateFile(file);
+  };
 
   const handleUploadTemplate = async (e) => {
     e.preventDefault();
-    if (!templateFile) return;
+    if (!templateFile || uploadingTemplate) return;
+    setTemplateMsg(null);
     setUploadingTemplate(true);
-    setTemplateMsg('');
     try {
+      // Uploading a template with an existing name replaces it on the server — ask first
+      const name = templateNameFromFile(templateFile.name);
+      const latest = (await fetchTemplates()) ?? templates;
+      if (latest.some((t) => t.name === name)) {
+        const ok = await confirm({
+          title: `Replace template “${name}”?`,
+          message: 'A template with this name already exists. Uploading will overwrite it for all future certificates (existing certificates are not changed).',
+          confirmLabel: 'Replace template',
+          tone: 'danger',
+        });
+        if (!ok) return;
+      }
+
       const fd = new FormData();
       fd.append('file', templateFile);
-      await api.post('/certificates/templates', fd, {
+      const res = await api.post('/certificates/templates', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setTemplateMsg('Template uploaded successfully.');
+      const savedName = res.data?.name || name;
+      setTemplateMsg({ tone: 'success', text: `Template “${savedName}” uploaded.` });
       setTemplateFile(null);
+      setTemplateInputKey((k) => k + 1);
       await fetchTemplates();
-    } catch {
-      setTemplateMsg('Upload failed. Try again.');
+      setSelectedTemplate(savedName);
+    } catch (err) {
+      setTemplateMsg({ tone: 'error', text: getErrorMessage(err, 'Template upload failed.') });
     } finally {
       setUploadingTemplate(false);
     }
   };
 
   const handleDeleteTemplate = async (name) => {
-    if (!window.confirm(`Delete template "${name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete template “${name}”?`,
+      message: 'Certificates already generated with it are not affected.',
+      confirmLabel: 'Delete template',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setDeletingTemplate(name);
     try {
-      await api.delete(`/certificates/templates/${name}`);
+      await api.delete(`/certificates/templates/${encodeURIComponent(name)}`);
+      toast.success(`Template “${name}” deleted`);
       if (selectedTemplate === name) setSelectedTemplate('');
       await fetchTemplates();
-    } catch {
-      alert('Delete failed.');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not delete the template.'));
+    } finally {
+      setDeletingTemplate('');
     }
   };
 
   // ── Certificate generation ───────────────────────────────────────────────
   const [productFile, setProductFile] = useState(null);
+  const [productInputKey, setProductInputKey] = useState(0);
+  const [productError, setProductError] = useState('');
   const [fields, setFields] = useState({
     // Identification (header row)
     certificate_no:   '',
@@ -99,8 +183,21 @@ export function AdminGenerateCertificatePage() {
 
   const set = (k) => (e) => setFields((f) => ({ ...f, [k]: e.target.value }));
 
+  const onProductFileChange = (e) => {
+    const file = e.target.files?.[0] ?? null;
+    const err = imageFileError(file, MAX_PHOTO_BYTES, 'Gemstone photo');
+    setProductError(err);
+    if (err) {
+      setProductFile(null);
+      setProductInputKey((k) => k + 1);
+      return;
+    }
+    setProductFile(file);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;
     if (!selectedTemplate) { setError('Select a certificate template first.'); return; }
     setSaving(true);
     setError('');
@@ -118,58 +215,92 @@ export function AdminGenerateCertificatePage() {
       const res = await api.post('/certificates', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setResult(res.data);
-    } catch {
-      setError('Failed to generate certificate. Check fields and try again.');
+      setResult({ ...res.data, template: selectedTemplate });
+      toast.success(`Certificate ${res.data?.certificate_code ?? ''} generated`);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to generate the certificate. Check the fields and try again.'));
     } finally {
       setSaving(false);
     }
   };
+
+  const resultPdf = result ? pdfUrl(result.generated_image_path) : '';
 
   return (
     <Page title="Generate Certificate" description="Create a new gemstone identification certificate.">
       <div className="space-y-6">
 
         {/* ── Template management ─────────────────────────────────────── */}
-        <Card title="Certificate Templates" subtitle="Upload named template images once, then reuse from the list below.">
+        <Card title="Certificate Templates" subtitle="Upload named template images once, then reuse them from the list below.">
           <div className="space-y-4">
             <form onSubmit={handleUploadTemplate} className="flex flex-wrap gap-3 items-end">
-              <Field label="Upload new template" hint="Name the file clearly, e.g. certificate.jpeg">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setTemplateFile(e.target.files?.[0] ?? null)}
-                  className="text-xs"
+              <Field
+                label="Upload new template"
+                hint="PNG, JPG or WebP · max 15 MB. The file name becomes the template name, e.g. gemstone-portrait.png"
+                className="min-w-[240px] flex-1"
+              >
+                <FileInput
+                  key={templateInputKey}
+                  accept={IMAGE_ACCEPT}
+                  onChange={onTemplateFileChange}
+                  disabled={uploadingTemplate}
                 />
               </Field>
               <Button type="submit" disabled={!templateFile || uploadingTemplate} variant="outline">
                 {uploadingTemplate ? 'Uploading…' : 'Upload template'}
               </Button>
-              {templateMsg && <span className="text-xs text-green-600">{templateMsg}</span>}
             </form>
 
-            {templates.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {templates.map((t) => (
-                  <div
-                    key={t.name}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors ${
-                      selectedTemplate === t.name
-                        ? 'border-amber-500 bg-amber-50 font-semibold text-amber-800'
-                        : 'border-gray-200 hover:border-gray-400'
-                    }`}
-                    onClick={() => setSelectedTemplate(t.name)}
-                  >
-                    <span>{t.name}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(t.name); }}
-                      className="text-red-400 hover:text-red-600 text-xs leading-none"
+            {templateMsg && (
+              <Alert tone={templateMsg.tone} onDismiss={() => setTemplateMsg(null)}>
+                {templateMsg.text}
+              </Alert>
+            )}
+
+            {templatesError ? (
+              <Alert
+                tone="error"
+                action={<Button size="sm" variant="outline" onClick={fetchTemplates}>Retry</Button>}
+              >
+                {templatesError}
+              </Alert>
+            ) : templatesLoading && !templates.length ? (
+              <p className="text-xs text-gray-400">Loading templates…</p>
+            ) : templates.length > 0 ? (
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Certificate template">
+                {templates.map((t) => {
+                  const selected = selectedTemplate === t.name;
+                  return (
+                    <div
+                      key={t.name}
+                      className={cn(
+                        'flex items-center rounded-lg border text-sm transition-colors',
+                        selected
+                          ? 'border-gold bg-gold/12 font-semibold text-gold-800'
+                          : 'border-gray-200 hover:border-gray-400',
+                      )}
                     >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => setSelectedTemplate(t.name)}
+                        className="pl-3 pr-2 py-1.5"
+                      >
+                        {t.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTemplate(t.name)}
+                        disabled={deletingTemplate === t.name}
+                        aria-label={`Delete template ${t.name}`}
+                        className="pr-3 pl-1 py-1.5 text-red-400 hover:text-red-600 text-xs leading-none disabled:opacity-40"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-xs text-gray-400">No templates yet — upload one above.</p>
@@ -186,12 +317,12 @@ export function AdminGenerateCertificatePage() {
             <form onSubmit={handleSubmit} className="space-y-4">
 
               {/* Images */}
-              <Field label="Gemstone photo (optional)" hint="Placed in the photo box on the certificate.">
-                <input
-                  type="file" accept="image/*"
-                  onChange={(e) => setProductFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-xs"
-                />
+              <Field
+                label="Gemstone photo (optional)"
+                hint="Placed in the photo box on the certificate. PNG, JPG or WebP · max 8 MB."
+                error={productError || undefined}
+              >
+                <FileInput key={productInputKey} accept={IMAGE_ACCEPT} onChange={onProductFileChange} />
               </Field>
 
               {/* Identification */}
@@ -289,52 +420,55 @@ export function AdminGenerateCertificatePage() {
                 </Field>
               </details>
 
-              {error && <div className="text-xs text-red-500">{error}</div>}
+              {error && <Alert tone="error">{error}</Alert>}
 
               <div className="flex gap-2">
                 <Button type="submit" disabled={saving || !selectedTemplate} className="flex-1">
                   {saving ? 'Generating…' : 'Generate Certificate'}
                 </Button>
-                <Button type="button" variant="outline" onClick={() => navigate('/admin/certificates')}>
+                <Button variant="outline" to="/admin/certificates">
                   View all
                 </Button>
               </div>
             </form>
           </Card>
 
-          <Card title="Preview" subtitle="Generated certificate preview and download.">
+          <Card title="Preview" subtitle="Generated certificate preview.">
             {result ? (
               <div className="space-y-3">
                 <div className="text-xs text-gray-700 space-y-1">
                   <div><span className="font-semibold">Code:</span> {result.certificate_code}</div>
-                  <div><span className="font-semibold">Template:</span> {selectedTemplate}</div>
-                  <div><span className="font-semibold">Created:</span> {new Date(result.created_at).toLocaleString()}</div>
+                  <div><span className="font-semibold">Template:</span> {result.template}</div>
+                  <div><span className="font-semibold">Created:</span> {formatDateTime(result.created_at)}</div>
                 </div>
                 {result.generated_image_path && (
                   <div>
                     <img
                       src={mediaUrl(result.generated_image_path)}
-                      alt="Certificate"
+                      alt={`Certificate ${result.certificate_code}`}
                       className="border border-gray-200 rounded-xl w-full object-contain max-h-96"
                     />
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      <a
-                        href={pdfUrl(result.generated_image_path)}
-                        download={`${result.certificate_code}.pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-300 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors"
-                      >
-                        ↓ Download PDF (A4 print-ready)
-                      </a>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      {resultPdf && (
+                        <a
+                          href={resultPdf}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gold/12 border border-gold/40 text-gold-800 text-xs font-semibold hover:bg-gold/20 transition-colors"
+                        >
+                          Open PDF (A4 print-ready)
+                        </a>
+                      )}
                       <a
                         href={mediaUrl(result.generated_image_path)}
-                        download={`${result.certificate_code}.png`}
-                        className="inline-flex items-center gap-1 text-xs text-gray-500 font-medium hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-gray-600 font-medium hover:underline"
                       >
-                        ↓ PNG
+                        Open PNG
                       </a>
                     </div>
+                    <p className="mt-2 text-[11px] text-gray-500">Opens in a new tab — save or print it from there.</p>
                   </div>
                 )}
               </div>

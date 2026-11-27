@@ -8,8 +8,8 @@ export function AboutPage() {
       {/* Hero */}
       <div className="space-y-4">
         <div className="text-[11px] font-semibold uppercase tracking-widest text-primary">Our Story</div>
-        <h1 className="font-display text-5xl font-semibold text-espresso leading-tight">About Bhaktijyot</h1>
-        <p className="text-warmBrown/70 text-lg leading-relaxed max-w-2xl">
+        <h1 className="font-display text-4xl sm:text-5xl font-semibold text-espresso leading-tight">About Bhaktijyot</h1>
+        <p className="text-espresso/75 text-lg leading-relaxed max-w-2xl">
           For over 40 years, Bhaktijyot has been Ahmednagar's most trusted source for authentic gemstones, crystal malas, and sacred pooja essentials.
         </p>
       </div>
@@ -33,19 +33,19 @@ export function AboutPage() {
             desc: 'From rudraksha malas to crystal bracelets — each product is curated with care for quality, spiritual significance, and authenticity.',
           },
         ].map(({ icon: Icon, title, desc }) => (
-          <div key={title} className="bg-white rounded-2xl p-6 border border-stone-100 shadow-sm space-y-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+          <div key={title} className="bg-white rounded-2xl p-6 border border-gold/25 shadow-sm space-y-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center" aria-hidden="true">
               <Icon className="h-5 w-5 text-primary" />
             </div>
-            <h3 className="font-semibold text-warmBrown">{title}</h3>
-            <p className="text-sm text-warmBrown/60 leading-relaxed">{desc}</p>
+            <h2 className="font-semibold text-espresso">{title}</h2>
+            <p className="text-sm text-espresso/70 leading-relaxed">{desc}</p>
           </div>
         ))}
       </div>
 
       {/* Body */}
-      <div className="prose prose-stone max-w-none">
-        <div className="space-y-4 text-warmBrown/70 text-sm leading-relaxed">
+      <div>
+        <div className="space-y-4 text-espresso/75 text-sm sm:text-base leading-relaxed max-w-2xl">
           <p>
             Bhaktijyot is a gemstone laboratory and spiritual shop focused on authenticity, transparency, and devotion.
             Every gemstone report is produced independently using an image-based certificate system that can be verified
@@ -66,7 +66,7 @@ export function AboutPage() {
       {/* CTA */}
       <div className="flex flex-wrap gap-4">
         <Link to="/products" className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-primary text-white font-semibold text-sm hover:bg-primary-dark transition-colors group">
-          Shop Now <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+          Shop Now <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" aria-hidden="true" />
         </Link>
         <Link to="/verify" className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full border border-espresso/20 text-espresso font-semibold text-sm hover:border-primary hover:text-primary transition-colors">
           Verify Certificate

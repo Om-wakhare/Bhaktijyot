@@ -1,293 +1,362 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import api from '../../services/apiClient';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import { ImageUploader } from '../../components/admin/ImageUploader';
-import { Button, Card, Field, Input, Page, Select, Textarea } from '../../components/admin/ui';
+import {
+  Alert, Button, Card, ErrorState, Field, FileInput, Input, LoadingState, Page, Select, Textarea, Toggle, cn,
+} from '../../components/admin/ui';
+import { useToast } from '../../components/admin/Toast';
+import { useConfirm } from '../../components/admin/ConfirmDialog';
+import {
+  SLUG_HINT, flattenTree, formatBytes, httpStatus, indentLabel, useLatestRequest,
+} from '../../components/admin/adminUtils';
+import {
+  BADGE_PRESETS, EMPTY_PRODUCT_FORM, VIDEO_ACCEPT, discountPct, formFromProduct, generateSlug,
+  productPayload, sortImages, validateProductForm, videoFileError,
+} from '../../components/admin/productForm';
 
-const BADGE_PRESETS = ['Bestseller', 'New Arrival', 'Limited Edition', 'Hot', 'Organic'];
-
-function flattenCategories(nodes, level = 0, acc = []) {
-  nodes.forEach((c) => {
-    acc.push({ id: c.id, name: `${'— '.repeat(level)}${c.name}` });
-    if (c.children?.length) flattenCategories(c.children, level + 1, acc);
-  });
-  return acc;
-}
-
-function makeSlug(name) {
-  return name.toLowerCase().trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function discountPct(price, mrp) {
-  const p = Number(price), m = Number(mrp);
-  if (!p || !m || m <= p) return null;
-  return Math.round((1 - p / m) * 100);
-}
+const MAX_IMAGES = 4;
+const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export function AdminEditProductPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const beginRequest = useLatestRequest();
 
-  const [product, setProduct]     = useState(null);
+  // Message handed over by the Add page (e.g. product created but media upload failed)
+  const [notice, setNotice] = useState(() => location.state?.notice ?? null);
+  useEffect(() => {
+    if (location.state?.notice) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    // Only on arrival
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [product, setProduct] = useState(null);
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [saving, setSaving]       = useState(false);
-  const [toast, setToast]         = useState(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [form, setForm] = useState(EMPTY_PRODUCT_FORM);
+  const [generatingSlug, setGeneratingSlug] = useState(false);
 
-  // Form state
-  const [form, setForm] = useState({
-    name: '', slug: '', description: '', benefits: '',
-    badge: '', price: '', mrp: '', stock: '-1',
-    category_id: '', sort_order: '0', is_active: true,
-  });
-
-  // Image management
-  const [existingImages, setExistingImages]   = useState([]);
-  const [dragOver, setDragOver]               = useState(null);
-  const [newImageFiles, setNewImageFiles]     = useState([]);
-  const [uploadingMedia, setUploadingMedia]   = useState(false);
-  const [videoFile, setVideoFile]             = useState(null);
+  // Images
+  const [existingImages, setExistingImages] = useState([]);
+  const [imageBusyId, setImageBusyId] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
   const dragSrc = useRef(null);
+  const [newImageFiles, setNewImageFiles] = useState([]);
+  const [uploaderKey, setUploaderKey] = useState(0);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
-  // Slugify generating
-  const [generatingSlug, setGeneratingSlug]   = useState(false);
+  // Video
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoError, setVideoError] = useState('');
+  const [videoInputKey, setVideoInputKey] = useState(0);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
 
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
+  const applyProduct = useCallback((p) => {
+    setProduct(p);
+    setExistingImages(sortImages(p?.images));
+  }, []);
 
   // ── Load product + categories ──────────────────────────────
-  useEffect(() => {
-    Promise.all([
-      api.get(`/products/${id}`),
-      api.get('/categories'),
-    ]).then(([pRes, cRes]) => {
-      const p = pRes.data;
-      setProduct(p);
-      setExistingImages(p.images ?? []);
-      setCategories(cRes.data);
-      setForm({
-        name:        p.name ?? '',
-        slug:        p.slug ?? '',
-        description: p.description ?? '',
-        benefits:    p.benefits ?? '',
-        badge:       p.badge ?? '',
-        price:       p.price != null ? String(p.price) : '',
-        mrp:         p.mrp  != null ? String(p.mrp)  : '',
-        stock:       p.stock != null ? String(p.stock) : '-1',
-        category_id: p.category_id != null ? String(p.category_id) : '',
-        sort_order:  p.sort_order != null ? String(p.sort_order) : '0',
-        is_active:   p.is_active ?? true,
-      });
-    }).catch(() => showToast('Failed to load product', 'error'))
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    const isCurrent = beginRequest();
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [pRes, cRes] = await Promise.all([api.get(`/products/${id}`), api.get('/categories')]);
+      if (!isCurrent()) return;
+      applyProduct(pRes.data);
+      setForm(formFromProduct(pRes.data));
+      setCategories(Array.isArray(cRes.data) ? cRes.data : []);
+    } catch (err) {
+      if (!isCurrent()) return;
+      setLoadError(
+        httpStatus(err) === 404
+          ? 'Product not found — it may have been deleted.'
+          : getErrorMessage(err, 'Could not load the product.'),
+      );
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
+  }, [id, beginRequest, applyProduct]);
+
+  useEffect(() => { load(); }, [load]);
+
+  /** Re-read the product and its images (keeps unsaved form edits). */
+  const refreshMedia = useCallback(async () => {
+    const [pRes, iRes] = await Promise.all([api.get(`/products/${id}`), api.get(`/products/${id}/images`)]);
+    setProduct(pRes.data);
+    setExistingImages(sortImages(iRes.data));
   }, [id]);
+
+  const flatCats = useMemo(() => flattenTree(categories), [categories]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleAutoSlug = async () => {
-    if (!form.name) return;
+    if (!form.name.trim()) return;
     setGeneratingSlug(true);
-    try {
-      const res = await api.post('/products/generate-slug', { name: form.name });
-      setForm((prev) => ({ ...prev, slug: res.data.slug }));
-    } catch {
-      setForm((prev) => ({ ...prev, slug: makeSlug(form.name) }));
-    } finally {
-      setGeneratingSlug(false);
-    }
+    const slug = await generateSlug(form.name.trim());
+    setForm((prev) => ({ ...prev, slug }));
+    setFieldErrors((prev) => ({ ...prev, slug: undefined }));
+    setGeneratingSlug(false);
   };
 
   // ── Save core fields ───────────────────────────────────────
   const handleSave = async (e) => {
     e.preventDefault();
+    if (saving) return;
+    const errors = validateProductForm(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      toast.error('Please fix the highlighted fields.');
+      return;
+    }
     setSaving(true);
     try {
-      await api.put(`/products/${id}`, {
-        name:        form.name,
-        slug:        form.slug,
-        description: form.description || null,
-        benefits:    form.benefits    || null,
-        badge:       form.badge       || null,
-        price:       form.price       ? Number(form.price) : null,
-        mrp:         form.mrp         ? Number(form.mrp)   : null,
-        stock:       form.stock !== '' ? Number(form.stock) : -1,
-        category_id: form.category_id ? Number(form.category_id) : null,
-        sort_order:  Number(form.sort_order) || 0,
-        is_active:   form.is_active,
-      });
-      showToast('Product saved successfully');
+      const res = await api.put(`/products/${id}`, productPayload(form));
+      applyProduct(res.data);
+      setForm(formFromProduct(res.data));
+      toast.success('Product saved');
     } catch (err) {
-      const detail = err.response?.data?.detail ?? 'Save failed';
-      showToast(Array.isArray(detail) ? detail[0]?.msg : detail, 'error');
+      toast.error(getErrorMessage(err, 'Save failed.'));
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Upload new images/video ────────────────────────────────
-  const handleUploadMedia = async () => {
-    if (!newImageFiles.length && !videoFile) return;
-    setUploadingMedia(true);
+  // ── Upload new images ──────────────────────────────────────
+  const handleUploadImages = async () => {
+    if (!newImageFiles.length || uploadingImages) return;
+    setUploadingImages(true);
     try {
       const formData = new FormData();
       newImageFiles.forEach((f) => formData.append('images', f));
-      if (videoFile) formData.append('video', videoFile);
-      const res = await api.post(`/products/${id}/media`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setExistingImages(res.data.images ?? []);
+      const res = await api.post(`/products/${id}/media`, formData, MULTIPART);
+      const count = newImageFiles.length;
+      applyProduct(res.data);
       setNewImageFiles([]);
-      setVideoFile(null);
-      showToast('Media uploaded');
+      setUploaderKey((k) => k + 1); // fresh uploader: clears its selection and previews
+      toast.success(`${count} image${count > 1 ? 's' : ''} uploaded`);
     } catch (err) {
-      const detail = err.response?.data?.detail ?? 'Upload failed';
-      showToast(detail, 'error');
+      toast.error(getErrorMessage(err, 'Image upload failed.'));
     } finally {
-      setUploadingMedia(false);
+      setUploadingImages(false);
+    }
+  };
+
+  // ── Video ──────────────────────────────────────────────────
+  const onVideoChange = (e) => {
+    const file = e.target.files?.[0] ?? null;
+    const err = videoFileError(file);
+    setVideoError(err);
+    if (err) {
+      setVideoFile(null);
+      setVideoInputKey((k) => k + 1);
+      return;
+    }
+    setVideoFile(file);
+  };
+
+  const handleUploadVideo = async () => {
+    if (!videoFile || uploadingVideo) return;
+    setUploadingVideo(true);
+    try {
+      const formData = new FormData();
+      formData.append('video', videoFile);
+      const res = await api.post(`/products/${id}/media`, formData, MULTIPART);
+      applyProduct(res.data); // includes the new video_path
+      setVideoFile(null);
+      setVideoInputKey((k) => k + 1);
+      toast.success('Video uploaded');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Video upload failed.'));
+    } finally {
+      setUploadingVideo(false);
     }
   };
 
   // ── Image operations ───────────────────────────────────────
   const handleSetPrimary = async (imageId) => {
-    await api.put(`/products/${id}/images/set-primary/${imageId}`);
-    const res = await api.get(`/products/${id}/images`);
-    setExistingImages(res.data);
-    showToast('Primary image updated');
+    setImageBusyId(imageId);
+    try {
+      // The server moves the image to position 0 and returns the product
+      const res = await api.put(`/products/${id}/images/set-primary/${imageId}`);
+      if (res.data) applyProduct(res.data);
+      await refreshMedia().catch(() => {});
+      toast.success('Primary image updated');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not set the primary image.'));
+    } finally {
+      setImageBusyId(null);
+    }
   };
 
-  const handleDeleteImage = async (imageId) => {
-    await api.delete(`/products/${id}/images/${imageId}`);
-    setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
-    showToast('Image deleted');
+  const handleDeleteImage = async (img, idx) => {
+    const ok = await confirm({
+      title: 'Delete this image?',
+      message:
+        idx === 0 && existingImages.length > 1
+          ? 'This is the primary image — the next image will become primary. The file is removed permanently.'
+          : 'The image file is removed permanently.',
+      confirmLabel: 'Delete image',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setImageBusyId(img.id);
+    try {
+      await api.delete(`/products/${id}/images/${img.id}`);
+      setExistingImages((prev) => prev.filter((i) => i.id !== img.id));
+      toast.success('Image deleted');
+      await refreshMedia().catch(() => {});
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not delete the image.'));
+    } finally {
+      setImageBusyId(null);
+    }
   };
 
   // Drag-to-reorder
   const handleDragStart = (idx) => { dragSrc.current = idx; };
   const handleDragEnterSlot = (idx) => setDragOver(idx);
   const handleDragEnd = async () => {
+    const target = dragOver;
     setDragOver(null);
     if (dragSrc.current === null) return;
-    const reordered = [...existingImages];
-    const [moved] = reordered.splice(dragSrc.current, 1);
-    reordered.splice(dragOver ?? dragSrc.current, 0, moved);
+    const from = dragSrc.current;
     dragSrc.current = null;
+    if (target === null || target === from) return;
+    const reordered = [...existingImages];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(target, 0, moved);
     setExistingImages(reordered);
     try {
-      await api.put(`/products/${id}/images/reorder`, {
+      const res = await api.put(`/products/${id}/images/reorder`, {
         image_ids: reordered.map((img) => img.id),
       });
-    } catch {
-      showToast('Reorder failed', 'error');
+      if (Array.isArray(res.data)) setExistingImages(sortImages(res.data));
+      await refreshMedia().catch(() => {});
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Reorder failed.'));
+      refreshMedia().catch(() => {});
     }
   };
 
-  // ── Delete product ─────────────────────────────────────────
+  // ── Delete / unpublish product ─────────────────────────────
+  const handleUnpublish = async () => {
+    try {
+      const res = await api.put(`/products/${id}`, { is_active: false });
+      applyProduct(res.data);
+      setForm((prev) => ({ ...prev, is_active: false }));
+      toast.success('Product unpublished — it is now a draft, hidden from the store.');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not unpublish the product.'));
+    }
+  };
+
   const handleDelete = async () => {
+    const ok = await confirm({
+      title: `Delete "${product?.name}"?`,
+      message: 'This permanently removes the product, all its images, and reviews. It cannot be undone.',
+      confirmLabel: 'Delete permanently',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setDeleting(true);
     try {
       await api.delete(`/products/${id}`);
+      toast.success('Product deleted');
       navigate('/admin/products');
-    } catch {
-      showToast('Delete failed', 'error');
+    } catch (err) {
+      setDeleting(false);
+      if (httpStatus(err) === 409) {
+        const alreadyDraft = product?.is_active === false;
+        const unpub = await confirm({
+          title: 'This product can’t be deleted',
+          message: getErrorMessage(err),
+          confirmLabel: alreadyDraft ? 'OK' : 'Unpublish instead',
+          cancelLabel: alreadyDraft ? null : 'Keep as is',
+        });
+        if (unpub && !alreadyDraft) await handleUnpublish();
+        return;
+      }
+      toast.error(getErrorMessage(err, 'Delete failed.'));
     }
   };
 
-  if (loading) {
+  // ── Render ─────────────────────────────────────────────────
+  if (loading && !product) {
     return (
       <Page title="Edit Product">
-        <div className="text-sm text-gray-500 py-10 text-center">Loading…</div>
+        <Card><LoadingState label="Loading product…" /></Card>
       </Page>
     );
   }
 
   if (!product) {
     return (
-      <Page title="Edit Product">
-        <div className="text-sm text-red-500 py-10 text-center">Product not found.</div>
+      <Page
+        title="Edit Product"
+        actions={<Button variant="outline" size="sm" to="/admin/products">← Back to Products</Button>}
+      >
+        <Card><ErrorState message={loadError || 'Could not load the product.'} onRetry={load} /></Card>
       </Page>
     );
   }
 
   const disc = discountPct(form.price, form.mrp);
-  const flatCats = flattenCategories(categories);
+  const imageCount = existingImages.length;
 
   return (
     <Page
       title="Edit Product"
       description={`ID #${id} · ${product.name}`}
-      actions={
-        <Link to="/admin/products">
-          <Button variant="outline" size="sm">← Back to Products</Button>
-        </Link>
-      }
+      actions={<Button variant="outline" size="sm" to="/admin/products">← Back to Products</Button>}
     >
-      {/* Toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 9999,
-          padding: '10px 18px', borderRadius: '8px',
-          background: toast.type === 'error' ? '#8B1A1A' : '#1D3D2C',
-          color: '#F4E4D1', fontSize: '13px', fontWeight: 600,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-        }}>
-          {toast.msg}
-        </div>
+      {notice && (
+        <Alert tone="warning" title={notice.title} onDismiss={() => setNotice(null)} className="max-w-3xl">
+          {notice.message}
+        </Alert>
       )}
 
-      <form onSubmit={handleSave} className="space-y-5 max-w-3xl">
-
+      <form onSubmit={handleSave} className="space-y-5 max-w-3xl" noValidate>
         {/* ── Core fields ─────────────────────────────────── */}
         <Card title="Product Details">
-          {/* Published toggle */}
-          <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-100">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={form.is_active}
-              onClick={() => setForm((p) => ({ ...p, is_active: !p.is_active }))}
-              style={{
-                width: 44, height: 24, borderRadius: 99, border: 'none', cursor: 'pointer',
-                background: form.is_active ? '#1D3D2C' : '#D1D5DB',
-                position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-              }}
-            >
-              <span style={{
-                position: 'absolute', top: 3, left: form.is_active ? 22 : 3,
-                width: 18, height: 18, borderRadius: '50%',
-                background: '#fff', transition: 'left 0.18s',
-              }} />
-            </button>
-            <span className="text-sm font-semibold" style={{ color: form.is_active ? '#1D3D2C' : '#9CA3AF' }}>
-              {form.is_active ? 'Published — visible on site' : 'Draft — hidden from public'}
-            </span>
+          <div className="mb-5 pb-4 border-b border-gray-100">
+            <Toggle
+              checked={form.is_active}
+              onChange={(v) => setForm((p) => ({ ...p, is_active: v }))}
+              label={form.is_active ? 'Published — visible on site' : 'Draft — hidden from public'}
+              description="Saved with “Save Changes”."
+            />
           </div>
 
           <div className="space-y-4">
             {/* Name + slug */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Name *">
-                <Input name="name" value={form.name} onChange={handleChange} required />
+              <Field label="Name *" error={fieldErrors.name} htmlFor="ep-name">
+                <Input id="ep-name" name="name" value={form.name} onChange={handleChange} required maxLength={255} />
               </Field>
-              <Field label="Slug *" hint="Lowercase letters, digits, and hyphens only">
+              <Field label="Slug *" error={fieldErrors.slug} hint={SLUG_HINT} htmlFor="ep-slug">
                 <div className="flex gap-2">
-                  <Input
-                    name="slug" value={form.slug} onChange={handleChange}
-                    required style={{ flex: 1 }}
-                  />
+                  <Input id="ep-slug" name="slug" value={form.slug} onChange={handleChange} required className="flex-1" />
                   <Button
-                    type="button" variant="outline" size="sm"
-                    onClick={handleAutoSlug} disabled={generatingSlug || !form.name}
-                    style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                    variant="outline" size="sm"
+                    onClick={handleAutoSlug}
+                    disabled={generatingSlug || !form.name.trim()}
+                    className="whitespace-nowrap shrink-0"
                   >
                     {generatingSlug ? '…' : 'Auto-generate'}
                   </Button>
@@ -306,22 +375,22 @@ export function AdminEditProductPage() {
             {/* Badge */}
             <Field label="Badge (top-left label on product card)">
               <Input
-                name="badge" value={form.badge} onChange={handleChange}
+                name="badge" value={form.badge} onChange={handleChange} maxLength={100}
                 placeholder="e.g. Bestseller, New Arrival — leave blank for none"
               />
               <div className="flex gap-2 mt-2 flex-wrap">
                 {BADGE_PRESETS.map((b) => (
                   <button
-                    key={b} type="button"
+                    key={b}
+                    type="button"
+                    aria-pressed={form.badge === b}
                     onClick={() => setForm((p) => ({ ...p, badge: b }))}
-                    style={{
-                      padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700,
-                      cursor: 'pointer', border: '1.5px solid',
-                      borderColor: form.badge === b ? '#1D3D2C' : '#D1D5DB',
-                      background: form.badge === b ? '#1D3D2C' : 'white',
-                      color: form.badge === b ? '#F4E4D1' : '#6B7280',
-                      transition: 'all 0.15s',
-                    }}
+                    className={cn(
+                      'px-2.5 py-0.5 rounded-full text-[11px] font-bold border-[1.5px] transition-colors',
+                      form.badge === b
+                        ? 'border-primary bg-primary text-cream'
+                        : 'border-gray-300 bg-white text-gray-500 hover:border-primary',
+                    )}
                   >
                     {b}
                   </button>
@@ -330,11 +399,7 @@ export function AdminEditProductPage() {
                   <button
                     type="button"
                     onClick={() => setForm((p) => ({ ...p, badge: '' }))}
-                    style={{
-                      padding: '3px 10px', borderRadius: 99, fontSize: 11,
-                      cursor: 'pointer', border: '1.5px solid #FCA5A5',
-                      background: 'white', color: '#DC2626', fontWeight: 700,
-                    }}
+                    className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border-[1.5px] border-red-300 bg-white text-red-600"
                   >
                     Clear
                   </button>
@@ -343,33 +408,30 @@ export function AdminEditProductPage() {
             </Field>
 
             {/* Price / MRP / Stock / Category / Sort */}
-            <div className="grid gap-4 sm:grid-cols-5">
-              <Field label="Price (₹)">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Price (₹)" error={fieldErrors.price}>
                 <Input name="price" value={form.price} onChange={handleChange} type="number" min="0" step="0.01" />
               </Field>
-              <Field label="MRP (₹)">
-                <div>
-                  <Input name="mrp" value={form.mrp} onChange={handleChange} type="number" min="0" step="0.01" />
-                  {disc && (
-                    <div className="mt-1 text-[11px] font-bold" style={{ color: '#1D3D2C' }}>
-                      {disc}% discount
-                    </div>
-                  )}
-                </div>
+              <Field
+                label="MRP (₹)"
+                error={fieldErrors.mrp}
+                hint={disc ? `${disc}% discount` : 'Shown struck-through when higher than price'}
+              >
+                <Input name="mrp" value={form.mrp} onChange={handleChange} type="number" min="0" step="0.01" />
               </Field>
-              <Field label="Stock" hint="-1 = unlimited">
-                <Input name="stock" value={form.stock} onChange={handleChange} type="number" />
+              <Field label="Stock" error={fieldErrors.stock} hint="-1 = unlimited">
+                <Input name="stock" value={form.stock} onChange={handleChange} type="number" min="-1" step="1" />
               </Field>
               <Field label="Category">
                 <Select name="category_id" value={form.category_id} onChange={handleChange}>
                   <option value="">No category</option>
                   {flatCats.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{indentLabel(c.level, c.name)}</option>
                   ))}
                 </Select>
               </Field>
-              <Field label="Sort Order" hint="Lower = first">
-                <Input name="sort_order" value={form.sort_order} onChange={handleChange} type="number" min="0" />
+              <Field label="Sort Order" error={fieldErrors.sort_order} hint="Lower = first">
+                <Input name="sort_order" value={form.sort_order} onChange={handleChange} type="number" step="1" />
               </Field>
             </div>
           </div>
@@ -380,116 +442,85 @@ export function AdminEditProductPage() {
           <Button type="submit" disabled={saving}>
             {saving ? 'Saving…' : 'Save Changes'}
           </Button>
-          <Link to="/admin/products">
-            <Button type="button" variant="outline">Cancel</Button>
-          </Link>
+          <Button variant="outline" to="/admin/products">Cancel</Button>
         </div>
-
       </form>
 
       {/* ── Images & Media ────────────────────────────────── */}
-      <div className="max-w-3xl mt-5 space-y-5">
+      <div className="max-w-3xl space-y-5">
         <Card
           title="Images"
-          subtitle={`${existingImages.length}/4 uploaded — drag to reorder, first image is primary`}
+          subtitle={`${imageCount}/${MAX_IMAGES} uploaded — drag to reorder; the first image is the primary image`}
         >
-          {/* Existing images grid */}
-          {existingImages.length > 0 && (
-            <div className="grid grid-cols-4 gap-3 mb-5">
-              {existingImages.map((img, idx) => (
-                <div
-                  key={img.id}
-                  draggable
-                  onDragStart={() => handleDragStart(idx)}
-                  onDragEnter={() => handleDragEnterSlot(idx)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={(e) => e.preventDefault()}
-                  style={{
-                    position: 'relative', borderRadius: 8, overflow: 'hidden',
-                    border: `2px solid ${dragOver === idx ? '#C9A84C' : idx === 0 ? '#1D3D2C' : '#E5E7EB'}`,
-                    cursor: 'grab', aspectRatio: '1',
-                    transition: 'border-color 0.15s',
-                  }}
-                >
-                  <img
-                    src={mediaUrl(img.image_path)}
-                    alt=""
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                  {idx === 0 && (
-                    <span style={{
-                      position: 'absolute', top: 4, left: 4,
-                      padding: '2px 6px', borderRadius: 99,
-                      fontSize: 9, fontWeight: 800, textTransform: 'uppercase',
-                      background: '#1D3D2C', color: '#F4E4D1', letterSpacing: '0.1em',
-                    }}>
-                      Primary
-                    </span>
-                  )}
-                  {/* Action overlay */}
-                  <div style={{
-                    position: 'absolute', inset: 0, background: 'rgba(22,10,4,0.60)',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    justifyContent: 'center', gap: 4,
-                    opacity: 0, transition: 'opacity 0.18s',
-                  }}
-                    className="img-actions"
-                    onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0}
+          {imageCount > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+              {existingImages.map((img, idx) => {
+                const busy = imageBusyId === img.id;
+                return (
+                  <div
+                    key={img.id}
+                    draggable={!imageBusyId}
+                    onDragStart={() => handleDragStart(idx)}
+                    onDragEnter={() => handleDragEnterSlot(idx)}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={(e) => e.preventDefault()}
+                    className={cn(
+                      'group relative aspect-square overflow-hidden rounded-lg border-2 cursor-grab transition-colors',
+                      dragOver === idx ? 'border-gold' : idx === 0 ? 'border-primary' : 'border-gray-200',
+                      busy && 'opacity-60',
+                    )}
                   >
-                    {idx !== 0 && (
+                    <img src={mediaUrl(img.image_path)} alt="" className="block h-full w-full object-cover" />
+                    {idx === 0 && (
+                      <span className="absolute top-1 left-1 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-cream">
+                        Primary
+                      </span>
+                    )}
+                    {/* Action overlay — visible on hover or keyboard focus */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-espresso/60 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      {idx !== 0 && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => handleSetPrimary(img.id)}
+                          className="rounded bg-gold px-2 py-0.5 text-[10px] font-bold text-espresso disabled:opacity-60"
+                        >
+                          Set Primary
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => handleSetPrimary(img.id)}
-                        style={{
-                          padding: '3px 8px', borderRadius: 4, fontSize: 10,
-                          fontWeight: 700, background: '#C9A84C', color: '#1C1209',
-                          border: 'none', cursor: 'pointer',
-                        }}
+                        disabled={busy}
+                        onClick={() => handleDeleteImage(img, idx)}
+                        className="rounded bg-red-800 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-60"
                       >
-                        Set Primary
+                        Delete
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteImage(img.id)}
-                      style={{
-                        padding: '3px 8px', borderRadius: 4, fontSize: 10,
-                        fontWeight: 700, background: '#8B1A1A', color: '#FFF8F0',
-                        border: 'none', cursor: 'pointer',
-                      }}
-                    >
-                      Delete
-                    </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          {/* Upload new images */}
-          {existingImages.length < 4 && (
+          {imageCount < MAX_IMAGES ? (
             <div className="space-y-3">
               <ImageUploader
-                existingCount={existingImages.length}
+                key={uploaderKey}
+                existingCount={imageCount}
                 onFilesChange={setNewImageFiles}
+                disabled={uploadingImages}
               />
               {newImageFiles.length > 0 && (
-                <Button
-                  type="button"
-                  onClick={handleUploadMedia}
-                  disabled={uploadingMedia}
-                >
-                  {uploadingMedia ? 'Uploading…' : `Upload ${newImageFiles.length} image${newImageFiles.length > 1 ? 's' : ''}`}
+                <Button onClick={handleUploadImages} disabled={uploadingImages}>
+                  {uploadingImages
+                    ? 'Uploading…'
+                    : `Upload ${newImageFiles.length} image${newImageFiles.length > 1 ? 's' : ''}`}
                 </Button>
               )}
             </div>
-          )}
-
-          {existingImages.length >= 4 && (
-            <p className="text-xs text-gray-500">
-              Maximum 4 images reached. Delete one to upload more.
-            </p>
+          ) : (
+            <p className="text-xs text-gray-500">Maximum {MAX_IMAGES} images reached. Delete one to upload more.</p>
           )}
         </Card>
 
@@ -499,77 +530,46 @@ export function AdminEditProductPage() {
             <div className="mb-4">
               <p className="text-xs text-gray-500 mb-2">Current video:</p>
               <video
+                key={product.video_path}
                 src={mediaUrl(product.video_path)}
                 controls
-                style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }}
+                className="max-w-full max-h-[200px] rounded-lg"
               />
             </div>
           )}
-          <Field label={product.video_path ? 'Replace video' : 'Upload video'}>
-            <input
-              type="file"
-              accept="video/*"
-              className="text-sm"
-              onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
-            />
+          <Field
+            label={product.video_path ? 'Replace video' : 'Upload video'}
+            error={videoError || undefined}
+            hint="MP4, WebM or MOV · max 50 MB"
+          >
+            <FileInput key={videoInputKey} accept={VIDEO_ACCEPT} onChange={onVideoChange} disabled={uploadingVideo} />
           </Field>
           {videoFile && (
-            <Button
-              type="button"
-              className="mt-3"
-              onClick={handleUploadMedia}
-              disabled={uploadingMedia}
-            >
-              {uploadingMedia ? 'Uploading…' : 'Upload Video'}
-            </Button>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button onClick={handleUploadVideo} disabled={uploadingVideo}>
+                {uploadingVideo ? 'Uploading…' : 'Upload Video'}
+              </Button>
+              <span className="text-[11px] text-gray-500">{videoFile.name} · {formatBytes(videoFile.size)}</span>
+            </div>
           )}
         </Card>
 
         {/* ── Danger zone ──────────────────────────────────── */}
         <Card title="Danger Zone">
-          {!deleteConfirm ? (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-gray-800">Delete this product</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Permanently removes the product, all its images, and reviews. Cannot be undone.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                onClick={() => setDeleteConfirm(true)}
-              >
-                Delete Product
-              </Button>
-            </div>
-          ) : (
-            <div
-              style={{
-                padding: '14px 16px', borderRadius: 8,
-                border: '1.5px solid #FCA5A5', background: '#FEF2F2',
-              }}
-            >
-              <p className="text-sm font-semibold text-red-700 mb-3">
-                Are you sure? This cannot be undone.
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Delete this product</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Permanently removes the product, all its images, and reviews. Products that have orders
+                can’t be deleted — unpublish them instead.
               </p>
-              <div className="flex gap-2">
-                <Button type="button" variant="danger" size="sm" onClick={handleDelete}>
-                  Yes, delete permanently
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => setDeleteConfirm(false)}>
-                  Cancel
-                </Button>
-              </div>
             </div>
-          )}
+            <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting} className="shrink-0">
+              {deleting ? 'Deleting…' : 'Delete Product'}
+            </Button>
+          </div>
         </Card>
       </div>
-
-      <style>{`
-        .img-actions:hover { opacity: 1 !important; }
-      `}</style>
     </Page>
   );
 }
