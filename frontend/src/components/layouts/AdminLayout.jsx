@@ -3,7 +3,7 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../services/apiClient';
 import {
   LayoutDashboard, ShoppingBag, Package, Tag, FileCheck, Settings, CalendarCheck,
-  LogOut, Sparkles, Menu, X, ChevronRight, Plus, List, RefreshCw, MessageSquare, ExternalLink,
+  LogOut, Sparkles, Menu, X, ChevronRight, Plus, List, RefreshCw, MessageSquare, ExternalLink, FileSpreadsheet,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useAuth } from '../../services/auth';
@@ -22,6 +22,7 @@ const NAV = [
     children: [
       { href: '/admin/products', label: 'Manage', icon: List },
       { href: '/admin/products/add', label: 'Add Product', icon: Plus },
+      { href: '/admin/products/bulk', label: 'Bulk Upload', icon: FileSpreadsheet },
     ],
   },
   {

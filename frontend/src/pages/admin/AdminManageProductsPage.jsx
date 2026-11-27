@@ -3,18 +3,13 @@ import { Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Alert, Button, Card, EmptyState, ErrorState, FileInput, Input, LoadingState, Page, Pill, Select, cn,
+  Button, Card, EmptyState, ErrorState, Input, LoadingState, Page, Pill, Select, cn,
 } from '../../components/admin/ui';
 import { useToast } from '../../components/admin/Toast';
 import { useConfirm } from '../../components/admin/ConfirmDialog';
 import {
   flattenTree, formatINR, httpStatus, indentLabel, subtreeIds, useLatestRequest,
 } from '../../components/admin/adminUtils';
-
-const MAX_BULK_BYTES = 5 * 1024 * 1024;
 
 /** Stock -1 means "unlimited / not tracked" in the backend — never show it as a number. */
 function StockBadge({ stock }) {
@@ -76,14 +71,6 @@ export function AdminManageProductsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [sort, setSort] = useState({ col: 'name', dir: 'asc' });
 
-  // Bulk upload
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkFile, setBulkFile] = useState(null);
-  const [bulkInputKey, setBulkInputKey] = useState(0);
-  const [bulkUploading, setBulkUploading] = useState(false);
-  const [bulkResult, setBulkResult] = useState(null);
-  const [bulkError, setBulkError] = useState('');
-
   const load = useCallback(async () => {
     const isCurrent = beginRequest();
     setLoading(true);
@@ -111,77 +98,6 @@ export function AdminManageProductsPage() {
       setProducts(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       toast.error(getErrorMessage(err, 'Could not refresh the product list.'));
-    }
-  };
-
-  // ── Bulk upload ──────────────────────────────────────────
-  const openBulk = () => {
-    setBulkOpen(true);
-    setBulkFile(null);
-    setBulkResult(null);
-    setBulkError('');
-    setBulkInputKey((k) => k + 1);
-  };
-  // Never close mid-upload (the result would be lost and the sheet could be sent again)
-  const closeBulk = () => { if (!bulkUploading) setBulkOpen(false); };
-
-  const downloadTemplate = async () => {
-    try {
-      const res = await api.get('/products/bulk-template', { responseType: 'blob' });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'product_bulk_template.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not download the template.'));
-    }
-  };
-
-  const onBulkFileChange = (e) => {
-    const file = e.target.files?.[0] || null;
-    setBulkResult(null);
-    setBulkError('');
-    if (file && !/\.(xlsx|xlsm)$/i.test(file.name)) {
-      setBulkError('Please choose a .xlsx Excel file.');
-      setBulkFile(null);
-      return;
-    }
-    if (file && file.size > MAX_BULK_BYTES) {
-      setBulkError('The Excel file is too large (max 5 MB).');
-      setBulkFile(null);
-      return;
-    }
-    setBulkFile(file);
-  };
-
-  const handleBulkUpload = async () => {
-    if (!bulkFile || bulkUploading) return;
-    setBulkUploading(true);
-    setBulkResult(null);
-    setBulkError('');
-    try {
-      const fd = new FormData();
-      fd.append('file', bulkFile);
-      const res = await api.post('/products/bulk-upload', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setBulkResult(res.data);
-      // The file has been processed — clear it so the same sheet can't be imported twice
-      setBulkFile(null);
-      setBulkInputKey((k) => k + 1);
-      const created = res.data?.created ?? 0;
-      if (created > 0) {
-        toast.success(`${created} product${created !== 1 ? 's' : ''} imported`);
-        await refreshProducts();
-      }
-    } catch (err) {
-      setBulkError(getErrorMessage(err, 'Upload failed.'));
-    } finally {
-      setBulkUploading(false);
     }
   };
 
@@ -273,7 +189,6 @@ export function AdminManageProductsPage() {
   }, [products, categoryTree, search, catFilter, statusFilter, sort]);
 
   const hasFilters = Boolean(search || catFilter || statusFilter);
-  const createdCount = bulkResult?.created ?? 0;
 
   return (
     <Page
@@ -285,7 +200,7 @@ export function AdminManageProductsPage() {
       }
       actions={
         <>
-          <Button size="sm" variant="outline" onClick={openBulk}>Bulk Upload</Button>
+          <Button size="sm" variant="outline" to="/admin/products/bulk">Bulk upload (Excel + photos)</Button>
           <Button size="sm" to="/admin/products/add">+ Add Product</Button>
         </>
       }
@@ -476,88 +391,6 @@ export function AdminManageProductsPage() {
         )}
       </Card>
 
-      {/* ── Bulk Upload dialog ── */}
-      <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open) closeBulk(); }}>
-        <DialogContent
-          hideClose={bulkUploading}
-          onInteractOutside={(e) => { if (bulkUploading) e.preventDefault(); }}
-          onEscapeKeyDown={(e) => { if (bulkUploading) e.preventDefault(); }}
-          className="w-[calc(100%-2rem)] max-w-[520px] max-h-[90vh] overflow-y-auto gap-0 rounded-2xl border-espresso/10 bg-white p-5 shadow-2xl sm:rounded-2xl sm:p-6"
-        >
-          <DialogHeader className="space-y-0 pr-6 text-left">
-            <DialogTitle className="text-lg font-bold text-espresso">Bulk Upload Products</DialogTitle>
-            <DialogDescription className="mt-1 text-sm text-espresso/70">
-              Upload an Excel (.xlsx) file to create many products at once (max 5 MB, 2000 rows).
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Step 1 — template */}
-          <div className="mt-5 p-3 rounded-lg bg-ivory border border-espresso/8">
-            <p className="text-xs font-semibold text-espresso/80 mb-1">1. Download the template</p>
-            <p className="text-[11px] text-espresso/70 mb-2">
-              Columns: name (required), slug, description, benefits, price, mrp, badge, category, stock.
-              Leave <b>slug</b> blank to auto-generate. <b>category</b> matches an existing category name.
-              Leave <b>stock</b> blank for unlimited (not tracked).
-            </p>
-            <Button size="sm" variant="outline" onClick={downloadTemplate}>Download Excel Template</Button>
-          </div>
-
-          {/* Step 2 — file */}
-          <div className="mt-4">
-            <label htmlFor="bulk-file" className="block text-xs font-semibold text-espresso/80 mb-2">
-              2. Choose your filled .xlsx file
-            </label>
-            <FileInput
-              key={bulkInputKey}
-              id="bulk-file"
-              accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={onBulkFileChange}
-              disabled={bulkUploading}
-            />
-          </div>
-
-          {bulkError && <Alert tone="error" className="mt-4">{bulkError}</Alert>}
-
-          {/* Result */}
-          {bulkResult && (
-            <Alert
-              tone={createdCount > 0 ? 'success' : 'warning'}
-              className="mt-4"
-              title={
-                createdCount > 0
-                  ? `${createdCount} created · ${bulkResult.skipped ?? 0} skipped`
-                  : `No products were created · ${bulkResult.skipped ?? 0} skipped`
-              }
-            >
-              {bulkResult.errors?.length > 0 && (
-                <div className="mt-2 max-h-40 overflow-y-auto">
-                  <p className="text-xs font-semibold text-red-800 mb-1">Skipped rows:</p>
-                  <ul className="text-[11px] text-red-800 space-y-0.5">
-                    {bulkResult.errors.map((er, i) => (
-                      <li key={i}>Row {er.row}: {er.error}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <p className="mt-2 text-[11px] text-espresso/70">
-                {createdCount > 0
-                  ? 'This file has been imported. To add the skipped rows, fix only those rows in a new sheet and upload it — uploading the same file again would create duplicates.'
-                  : 'Fix the sheet and choose it again.'}
-              </p>
-            </Alert>
-          )}
-
-          {/* Actions */}
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" size="sm" onClick={closeBulk} disabled={bulkUploading}>
-              {bulkResult ? 'Done' : 'Cancel'}
-            </Button>
-            <Button size="sm" onClick={handleBulkUpload} disabled={!bulkFile || bulkUploading}>
-              {bulkUploading ? 'Uploading…' : 'Upload & Create'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </Page>
   );
 }

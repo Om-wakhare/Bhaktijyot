@@ -30,6 +30,7 @@ const AdminManageCategoriesPage   = lazy(() => import('./pages/admin/AdminManage
 const AdminAddCategoryPage        = lazy(() => import('./pages/admin/AdminAddCategoryPage').then(m => ({ default: m.AdminAddCategoryPage })));
 const AdminManageProductsPage     = lazy(() => import('./pages/admin/AdminManageProductsPage').then(m => ({ default: m.AdminManageProductsPage })));
 const AdminAddProductPage         = lazy(() => import('./pages/admin/AdminAddProductPage').then(m => ({ default: m.AdminAddProductPage })));
+const AdminBulkUploadPage         = lazy(() => import('./pages/admin/AdminBulkUploadPage').then(m => ({ default: m.AdminBulkUploadPage })));
 const AdminEditProductPage        = lazy(() => import('./pages/admin/AdminEditProductPage').then(m => ({ default: m.AdminEditProductPage })));
 const AdminManageCertificatesPage = lazy(() => import('./pages/admin/AdminManageCertificatesPage').then(m => ({ default: m.AdminManageCertificatesPage })));
 const AdminGenerateCertificatePage = lazy(() => import('./pages/admin/AdminGenerateCertificatePage').then(m => ({ default: m.AdminGenerateCertificatePage })));
@@ -98,6 +99,7 @@ export default function App() {
               <Route path="categories/add" element={<Suspense fallback={<AdminFallback />}><AdminAddCategoryPage /></Suspense>} />
               <Route path="products" element={<Suspense fallback={<AdminFallback />}><AdminManageProductsPage /></Suspense>} />
               <Route path="products/add" element={<Suspense fallback={<AdminFallback />}><AdminAddProductPage /></Suspense>} />
+              <Route path="products/bulk" element={<Suspense fallback={<AdminFallback />}><AdminBulkUploadPage /></Suspense>} />
               <Route path="products/:id/edit" element={<Suspense fallback={<AdminFallback />}><AdminEditProductPage /></Suspense>} />
               <Route path="reviews" element={<Suspense fallback={<AdminFallback />}><AdminManageReviewsPage /></Suspense>} />
               <Route path="certificates" element={<Suspense fallback={<AdminFallback />}><AdminManageCertificatesPage /></Suspense>} />
