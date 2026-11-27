@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { getErrorMessage } from '../../services/apiClient';
 
 // ── Slugs ────────────────────────────────────────────────────────────────────
 
@@ -190,6 +191,29 @@ export function useLatestRequest() {
     const id = counter.current;
     return () => id === counter.current;
   }, []);
+}
+
+/**
+ * Plain-language message for a "slug already exists" 409; otherwise the usual API message.
+ *   kind: 'category' | 'product'
+ */
+export function slugConflictMessage(err, kind, slug, fallback) {
+  const detail = err?.response?.data?.detail;
+  if (httpStatus(err) === 409 && typeof detail === 'string' && /slug already exists/i.test(detail)) {
+    return `Another ${kind} already uses the web address “${slug}”. Change the slug (the last part of the link) and try again.`;
+  }
+  return getErrorMessage(err, fallback);
+}
+
+// ── UI helpers ───────────────────────────────────────────────────────────────
+
+export function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** Bring an element into view (smooth unless the user asked for reduced motion). */
+export function scrollToElement(el) {
+  el?.scrollIntoView?.({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
 }
 
 // ── Cross-component signals ──────────────────────────────────────────────────

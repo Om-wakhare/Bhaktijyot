@@ -9,12 +9,12 @@ import {
 function StatCard({ label, value, sub, accent, to }) {
   const body = (
     <>
-      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</div>
-      <div className={`mt-1 text-3xl font-bold ${accent ? 'text-primary-dark' : 'text-gray-900'}`}>{value}</div>
-      {sub && <div className="mt-1 text-xs text-gray-500">{sub}</div>}
+      <div className="text-xs font-semibold text-espresso/60 uppercase tracking-wider">{label}</div>
+      <div className={`mt-1 text-3xl font-bold ${accent ? 'text-primary-dark' : 'text-espresso'}`}>{value}</div>
+      {sub && <div className="mt-1 text-xs text-espresso/60">{sub}</div>}
     </>
   );
-  const cls = `block bg-white rounded-xl border ${accent ? 'border-primary/20' : 'border-gray-200'} p-5 shadow-sm`;
+  const cls = `block bg-white rounded-xl border ${accent ? 'border-primary/20' : 'border-espresso/10'} p-5 shadow-sm`;
   return to ? (
     <Link to={to} className={`${cls} hover:border-primary/40 hover:shadow transition`}>
       {body}
@@ -50,9 +50,9 @@ export function AdminDashboardPage() {
   if (loading && !stats) {
     return (
       <div className="space-y-4 animate-pulse" role="status" aria-label="Loading dashboard">
-        <div className="h-6 bg-gray-200 rounded w-48" />
+        <div className="h-6 bg-espresso/10 rounded w-48" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-28 bg-gray-200 rounded-xl" />)}
+          {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-28 bg-espresso/10 rounded-xl" />)}
         </div>
       </div>
     );
@@ -127,8 +127,9 @@ export function AdminDashboardPage() {
         <StatCard
           label="Low Stock"
           value={products.low_stock_count ?? 0}
-          sub="published products with ≤ 5 units"
+          sub="Published products with 5 or fewer left (unlimited ones aren’t counted)"
           accent={(products.low_stock_count ?? 0) > 0}
+          to="/admin/products"
         />
       </div>
 
@@ -158,7 +159,7 @@ export function AdminDashboardPage() {
           <div className="space-y-2">
             {products.low_stock.map((p) => (
               <div key={p.id} className="flex items-center justify-between gap-3 text-sm">
-                <Link to={`/admin/products/${p.id}/edit`} className="text-gray-900 font-medium hover:underline truncate">
+                <Link to={`/admin/products/${p.id}/edit`} className="text-espresso font-medium hover:underline truncate">
                   {p.name}
                 </Link>
                 <span className={`shrink-0 font-bold px-2 py-0.5 rounded-full text-xs ${p.stock === 0 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
@@ -183,19 +184,19 @@ export function AdminDashboardPage() {
             </Link>
           }
         >
-          <div className="-mx-4 sm:-mx-5 -my-4 sm:-my-5 divide-y divide-gray-100">
+          <div className="-mx-4 sm:-mx-5 -my-4 sm:-my-5 divide-y divide-espresso/8">
             {recentOrders.map((order) => {
               const meta = orderStatusMeta(order.status);
               return (
-                <div key={order.id} className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 flex-wrap">
+                <div key={order.id} className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-ivory flex-wrap">
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm font-bold text-gray-800">#{order.id}</span>
-                    <span className="text-sm text-gray-600 truncate">{order.customer_name}</span>
+                    <span className="text-sm font-bold text-espresso">#{order.id}</span>
+                    <span className="text-sm text-espresso/70 truncate">{order.customer_name}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <Pill className={meta.className}>{meta.label}</Pill>
-                    <span className="text-sm font-semibold text-gray-800">{formatINR(order.total_amount)}</span>
-                    <span className="text-xs text-gray-400">{formatDate(order.created_at)}</span>
+                    <span className="text-sm font-semibold text-espresso">{formatINR(order.total_amount)}</span>
+                    <span className="text-xs text-espresso/60">{formatDate(order.created_at)}</span>
                   </div>
                 </div>
               );
@@ -205,9 +206,9 @@ export function AdminDashboardPage() {
       )}
 
       {(orders.total ?? 0) === 0 && (products.total ?? 0) === 0 && (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center space-y-2">
-          <p className="text-sm font-semibold text-gray-700">Your store is set up and ready!</p>
-          <p className="text-xs text-gray-500">Start by adding categories and products, then share your store link.</p>
+        <div className="bg-white border border-espresso/10 rounded-2xl p-6 text-center space-y-2">
+          <p className="text-sm font-semibold text-espresso/80">Your store is set up and ready!</p>
+          <p className="text-xs text-espresso/60">Start by adding categories and products, then share your store link.</p>
           <div className="flex justify-center gap-3 mt-3">
             <Button size="sm" to="/admin/categories/add">Add Category</Button>
             <Button size="sm" variant="outline" to="/admin/products/add">Add Product</Button>

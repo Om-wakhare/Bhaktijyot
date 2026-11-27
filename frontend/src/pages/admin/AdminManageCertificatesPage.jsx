@@ -17,7 +17,7 @@ function pdfUrl(pngPath) {
 }
 
 const LINK_CLS =
-  'px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700 text-xs font-semibold hover:bg-gray-200 whitespace-nowrap';
+  'px-2.5 py-1.5 rounded-md bg-espresso/5 text-espresso/80 text-xs font-semibold hover:bg-espresso/10 whitespace-nowrap';
 
 export function AdminManageCertificatesPage() {
   const toast = useToast();
@@ -126,22 +126,22 @@ export function AdminManageCertificatesPage() {
         ) : items.length === 0 ? (
           <EmptyState>{search ? 'No certificates match this code.' : 'No certificates yet.'}</EmptyState>
         ) : (
-          <div className={`overflow-x-auto border border-gray-200 rounded-xl ${loading ? 'opacity-60' : ''}`}>
+          <div className={`overflow-x-auto border border-espresso/10 rounded-xl ${loading ? 'opacity-60' : ''}`}>
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
+              <thead className="bg-ivory text-espresso/70">
                 <tr>
                   <th className="text-left font-semibold px-4 py-3">Code</th>
                   <th className="text-left font-semibold px-4 py-3">Created</th>
                   <th className="text-right font-semibold px-4 py-3">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-espresso/8">
                 {items.map((c) => {
                   const pdf = pdfUrl(c.generated_image_path);
                   return (
-                    <tr key={c.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{c.certificate_code}</td>
-                      <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{formatDateTime(c.created_at)}</td>
+                    <tr key={c.id} className="hover:bg-ivory">
+                      <td className="px-4 py-3 font-semibold text-espresso whitespace-nowrap">{c.certificate_code}</td>
+                      <td className="px-4 py-3 text-espresso/80 whitespace-nowrap">{formatDateTime(c.created_at)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
                           {c.generated_image_path && (

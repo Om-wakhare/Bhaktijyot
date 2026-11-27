@@ -11,7 +11,10 @@ export const EMPTY_PRODUCT_FORM = {
   badge: '',
   price: '',
   mrp: '',
-  stock: '-1',
+  // Stock: the backend uses -1 for "unlimited / not tracked". The form keeps the mode
+  // separate from the count so -1 is never shown and never silently becomes 0.
+  stock_tracked: false,
+  stock: '',
   category_id: '',
   sort_order: '0',
   is_active: true,
@@ -26,7 +29,8 @@ export function formFromProduct(p) {
     badge: p.badge ?? '',
     price: p.price != null ? String(p.price) : '',
     mrp: p.mrp != null ? String(p.mrp) : '',
-    stock: p.stock != null ? String(p.stock) : '-1',
+    stock_tracked: p.stock != null && p.stock !== -1,
+    stock: p.stock != null && p.stock !== -1 ? String(p.stock) : '',
     category_id: p.category_id != null ? String(p.category_id) : '',
     sort_order: p.sort_order != null ? String(p.sort_order) : '0',
     is_active: p.is_active ?? true,
@@ -47,9 +51,10 @@ export function validateProductForm(form) {
     const n = Number(form[k]);
     if (!Number.isFinite(n) || n < 0) errors[k] = 'Must be 0 or more.';
   });
-  if (!blank(form.stock)) {
+  if (form.stock_tracked) {
     const n = Number(form.stock);
-    if (!Number.isInteger(n) || n < -1) errors.stock = 'Whole number; -1 means unlimited.';
+    if (blank(form.stock)) errors.stock = 'Enter how many you have in stock (0 or more), or choose Unlimited.';
+    else if (!Number.isInteger(n) || n < 0) errors.stock = 'Enter a whole number, 0 or more.';
   }
   if (!blank(form.sort_order) && !Number.isInteger(Number(form.sort_order))) {
     errors.sort_order = 'Whole number.';
@@ -67,7 +72,7 @@ export function productPayload(form) {
     badge: blank(form.badge) ? null : String(form.badge).trim(),
     price: num(form.price),
     mrp: num(form.mrp),
-    stock: blank(form.stock) ? -1 : Number(form.stock),
+    stock: form.stock_tracked ? Number(form.stock) : -1,
     category_id: form.category_id ? Number(form.category_id) : null,
     sort_order: blank(form.sort_order) ? 0 : Number(form.sort_order),
     is_active: Boolean(form.is_active),

@@ -1,9 +1,13 @@
 import { forwardRef } from 'react';
 import { Link } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 
-export function cn(...classes) {
-  return classes.filter(Boolean).join(' ');
-}
+/**
+ * Admin design kit (brand tokens: primary forest green, gold, espresso text, ivory surfaces).
+ * `cn` is the shared clsx + tailwind-merge helper, so a `className` passed to any kit
+ * component overrides its defaults (e.g. <Button className="w-full px-6">).
+ */
+export { cn };
 
 /** `subtitle` is accepted as an alias of `description`. */
 export function Page({ title, description, subtitle, actions, children }) {
@@ -13,8 +17,8 @@ export function Page({ title, description, subtitle, actions, children }) {
       {(title || desc || actions) && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            {title && <h1 className="text-xl font-semibold text-gray-900">{title}</h1>}
-            {desc && <p className="mt-1 text-sm text-gray-600">{desc}</p>}
+            {title && <h1 className="font-display text-xl sm:text-2xl font-semibold text-espresso">{title}</h1>}
+            {desc && <p className="mt-1 text-sm text-espresso/70">{desc}</p>}
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
@@ -26,12 +30,12 @@ export function Page({ title, description, subtitle, actions, children }) {
 
 export function Card({ title, subtitle, actions, children, className }) {
   return (
-    <div className={cn('bg-white border border-gray-200 rounded-2xl shadow-sm', className)}>
+    <div className={cn('bg-white border border-espresso/10 rounded-2xl shadow-sm', className)}>
       {(title || subtitle || actions) && (
-        <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="px-4 sm:px-5 py-4 border-b border-espresso/8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            {title && <div className="text-sm font-semibold text-gray-900">{title}</div>}
-            {subtitle && <div className="text-xs text-gray-500">{subtitle}</div>}
+            {title && <h2 className="text-sm font-semibold text-espresso">{title}</h2>}
+            {subtitle && <div className="text-xs text-espresso/60">{subtitle}</div>}
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
@@ -45,16 +49,17 @@ const BUTTON_BASE =
   'inline-flex items-center justify-center gap-1.5 font-semibold rounded-md transition-colors ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 ' +
   'disabled:opacity-60 disabled:cursor-not-allowed';
+// Heights stay finger-friendly on phones (≥ 36px).
 const BUTTON_SIZES = {
-  sm: 'px-3 py-2 text-xs',
-  md: 'px-4 py-2 text-sm',
+  sm: 'min-h-[36px] px-3 py-1.5 text-xs',
+  md: 'min-h-[40px] px-4 py-2 text-sm',
 };
 const BUTTON_VARIANTS = {
   primary: 'bg-primary text-white hover:bg-primary-dark',
-  secondary: 'bg-gray-100 text-gray-800 hover:bg-gray-200',
-  outline: 'border border-gray-300 bg-white text-gray-700 hover:border-primary',
-  danger: 'bg-red-500 text-white hover:bg-red-600',
-  ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+  secondary: 'bg-espresso/5 text-espresso hover:bg-espresso/10',
+  outline: 'border border-espresso/20 bg-white text-espresso hover:border-primary hover:text-primary',
+  danger: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+  ghost: 'text-espresso/70 hover:bg-espresso/5 hover:text-espresso',
 };
 
 export function buttonClasses({ variant = 'primary', size = 'md', className } = {}) {
@@ -81,7 +86,7 @@ export const Input = forwardRef(function Input({ className, ...props }, ref) {
     <input
       ref={ref}
       className={cn(
-        'w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
+        'w-full rounded-md border border-espresso/20 bg-white px-3 py-2 text-sm text-espresso placeholder:text-espresso/55 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-ivory disabled:text-espresso/60',
         className,
       )}
       {...props}
@@ -94,7 +99,7 @@ export const Textarea = forwardRef(function Textarea({ className, ...props }, re
     <textarea
       ref={ref}
       className={cn(
-        'w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
+        'w-full rounded-md border border-espresso/20 bg-white px-3 py-2 text-sm text-espresso placeholder:text-espresso/55 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-ivory disabled:text-espresso/60',
         className,
       )}
       {...props}
@@ -107,7 +112,7 @@ export const Select = forwardRef(function Select({ className, ...props }, ref) {
     <select
       ref={ref}
       className={cn(
-        'w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white',
+        'w-full rounded-md border border-espresso/20 bg-white px-3 py-2 text-sm text-espresso placeholder:text-espresso/55 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary disabled:bg-ivory disabled:text-espresso/60',
         className,
       )}
       {...props}
@@ -122,7 +127,7 @@ export const FileInput = forwardRef(function FileInput({ className, ...props }, 
       ref={ref}
       type="file"
       className={cn(
-        'block w-full text-xs text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0',
+        'block w-full text-xs text-espresso/70 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0',
         'file:text-xs file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-dark file:cursor-pointer',
         className,
       )}
@@ -135,15 +140,15 @@ export function Field({ label, hint, error, htmlFor, className, children }) {
   return (
     <div className={className}>
       {label && (
-        <label htmlFor={htmlFor} className="block text-xs font-semibold text-gray-700 mb-1">
+        <label htmlFor={htmlFor} className="block text-xs font-semibold text-espresso/80 mb-1">
           {label}
         </label>
       )}
       {children}
       {error ? (
-        <div className="mt-1 text-[11px] font-medium text-red-600">{error}</div>
+        <div className="mt-1 text-[11px] font-medium text-red-700">{error}</div>
       ) : (
-        hint && <div className="mt-1 text-[11px] text-gray-500">{hint}</div>
+        hint && <div className="mt-1 text-[11px] text-espresso/60">{hint}</div>
       )}
     </div>
   );
@@ -162,7 +167,7 @@ export function Toggle({ checked, onChange, label, description, disabled }) {
         onClick={() => onChange(!checked)}
         className={cn(
           'relative h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 disabled:opacity-60',
-          checked ? 'bg-primary' : 'bg-gray-300',
+          checked ? 'bg-primary' : 'bg-espresso/25',
         )}
       >
         <span
@@ -173,8 +178,8 @@ export function Toggle({ checked, onChange, label, description, disabled }) {
         />
       </button>
       <div>
-        <div className={cn('text-sm font-semibold', checked ? 'text-primary' : 'text-gray-500')}>{label}</div>
-        {description && <div className="text-xs text-gray-500">{description}</div>}
+        <div className={cn('text-sm font-semibold', checked ? 'text-primary' : 'text-espresso/70')}>{label}</div>
+        {description && <div className="text-xs text-espresso/60">{description}</div>}
       </div>
     </div>
   );
@@ -182,9 +187,9 @@ export function Toggle({ checked, onChange, label, description, disabled }) {
 
 const ALERT_TONES = {
   error: 'bg-red-50 border-red-200 text-red-800',
-  success: 'bg-green-50 border-green-200 text-green-800',
-  warning: 'bg-amber-50 border-amber-200 text-amber-800',
-  info: 'bg-gray-50 border-gray-200 text-gray-700',
+  success: 'bg-primary-50 border-primary-100 text-primary-dark',
+  warning: 'bg-gold-50 border-gold-200 text-gold-800',
+  info: 'bg-ivory border-espresso/10 text-espresso/80',
 };
 
 export function Alert({ tone = 'info', title, children, action, onDismiss, className }) {
@@ -228,7 +233,7 @@ export function CountBadge({ count, className }) {
   return (
     <span
       className={cn(
-        'min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-500 text-white',
+        'min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold bg-gold text-espresso',
         className,
       )}
     >
@@ -239,14 +244,14 @@ export function CountBadge({ count, className }) {
 
 export function LoadingState({ label = 'Loading…', className }) {
   return (
-    <div role="status" className={cn('py-12 text-center text-sm text-gray-500', className)}>
+    <div role="status" className={cn('py-12 text-center text-sm text-espresso/60', className)}>
       {label}
     </div>
   );
 }
 
 export function EmptyState({ children, className }) {
-  return <div className={cn('py-12 text-center text-sm text-gray-500', className)}>{children}</div>;
+  return <div className={cn('py-12 text-center text-sm text-espresso/60', className)}>{children}</div>;
 }
 
 export function ErrorState({ message, onRetry, className }) {
@@ -265,7 +270,7 @@ export function ErrorState({ message, onRetry, className }) {
 /** Status tabs. tabs: [{ value, label, count? }] — use '' as the value for "All". */
 export function Tabs({ tabs, value, onChange, className }) {
   return (
-    <div role="tablist" className={cn('flex gap-1 border-b border-gray-200 overflow-x-auto', className)}>
+    <div role="tablist" className={cn('flex gap-1 border-b border-espresso/10 overflow-x-auto', className)}>
       {tabs.map((t) => {
         const active = t.value === value;
         return (
@@ -277,7 +282,7 @@ export function Tabs({ tabs, value, onChange, className }) {
             onClick={() => onChange(t.value)}
             className={cn(
               'flex items-center gap-2 px-3 sm:px-4 py-2.5 -mb-px text-sm font-medium border-b-2 whitespace-nowrap transition-colors',
-              active ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-900',
+              active ? 'border-primary text-primary' : 'border-transparent text-espresso/60 hover:text-espresso',
             )}
           >
             {t.label}
@@ -293,13 +298,13 @@ export function Pagination({ page, totalPages, onPageChange, summary, disabled, 
   if (totalPages <= 1 && !summary) return null;
   return (
     <div className={cn('mt-4 flex flex-col sm:flex-row items-center justify-between gap-2', className)}>
-      <div className="text-xs text-gray-500">{summary}</div>
+      <div className="text-xs text-espresso/60">{summary}</div>
       {totalPages > 1 && (
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" disabled={disabled || page <= 1} onClick={() => onPageChange(page - 1)}>
             ← Prev
           </Button>
-          <span className="text-xs text-gray-600">
+          <span className="text-xs text-espresso/70">
             Page {page} of {totalPages}
           </span>
           <Button
@@ -320,7 +325,7 @@ export function Table({ columns, rows, rowKey, className }) {
   return (
     <div className={cn('overflow-x-auto', className)}>
       <table className="min-w-full text-sm">
-        <thead className="bg-gray-50 text-gray-600">
+        <thead className="bg-ivory text-espresso/70">
           <tr>
             {columns.map((c) => (
               <th key={c.key} className={cn('px-4 py-3 font-semibold', c.align === 'right' ? 'text-right' : 'text-left')}>
@@ -329,9 +334,9 @@ export function Table({ columns, rows, rowKey, className }) {
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-espresso/8">
           {rows.map((r) => (
-            <tr key={rowKey(r)} className="hover:bg-gray-50">
+            <tr key={rowKey(r)} className="hover:bg-ivory">
               {columns.map((c) => (
                 <td key={c.key} className={cn('px-4 py-3', c.align === 'right' ? 'text-right' : 'text-left')}>
                   {c.cell(r)}

@@ -19,25 +19,91 @@ function StatusPill({ approved }) {
   );
 }
 
-function ActionBtn({ onClick, disabled, title, children, danger }) {
+const COMMENT_PREVIEW = 240;
+
+/** One review: full details readable on a phone, with labelled actions. */
+function ReviewItem({ review, busy, onApprove, onVerify, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  const name = review.reviewer_name || 'Anonymous';
+  const comment = review.comment || '';
+  const long = comment.length > COMMENT_PREVIEW;
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className={cn(
-        'p-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed',
-        danger ? 'text-red-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-primary hover:bg-primary/8',
-      )}
-    >
-      {children}
-    </button>
+    <li className="px-4 sm:px-5 py-4 space-y-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div
+            className="h-9 w-9 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[11px] font-bold shrink-0"
+            aria-hidden="true"
+          >
+            {name.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="text-sm font-semibold text-espresso">{name}</span>
+              <StatusPill approved={review.is_approved} />
+              {review.is_verified_offline && (
+                <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary">
+                  <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Verified purchase
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-espresso/60 break-all">
+              {[review.reviewer_phone, review.reviewer_email].filter(Boolean).join(' · ') || 'No contact details given'}
+            </div>
+          </div>
+        </div>
+        <span className="text-xs text-espresso/60 whitespace-nowrap">{formatDate(review.created_at)}</span>
+      </div>
+
+      <div className="text-xs text-espresso/70">
+        On{' '}
+        <span className="font-semibold text-espresso">{review.product_name || `Product #${review.product_id}`}</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <StarRating value={review.rating} size="sm" />
+        <span className="text-xs text-espresso/60">{review.rating} out of 5</span>
+      </div>
+
+      <div>
+        {review.title && <div className="text-sm font-semibold text-espresso">{review.title}</div>}
+        <p className="text-sm text-espresso/80 whitespace-pre-line break-words">
+          {expanded || !long ? comment : `${comment.slice(0, COMMENT_PREVIEW).trimEnd()}…`}
+          {long && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="ml-1 text-xs font-semibold text-primary hover:underline"
+            >
+              {expanded ? 'Show less' : 'Read full review'}
+            </button>
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 pt-1">
+        {!review.is_approved && (
+          <Button size="sm" onClick={() => onApprove(review)} disabled={busy}>
+            <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            Approve
+          </Button>
+        )}
+        {!review.is_verified_offline && (
+          <Button size="sm" variant="outline" onClick={() => onVerify(review)} disabled={busy}>
+            <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            Mark as verified purchase
+          </Button>
+        )}
+        <Button size="sm" variant="danger" onClick={() => onDelete(review)} disabled={busy} aria-label={`Delete review by ${name}`}>
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Delete
+        </Button>
+      </div>
+    </li>
   );
 }
-
-const TH = 'text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider';
 
 export function AdminManageReviewsPage() {
   const toast = useToast();
@@ -197,102 +263,18 @@ export function AdminManageReviewsPage() {
         ) : reviews.length === 0 ? (
           <EmptyState>{tab === 'pending' ? 'No pending reviews — all caught up!' : 'No reviews found.'}</EmptyState>
         ) : (
-          <div className={cn('overflow-x-auto -mx-4 sm:-mx-5 -my-4 sm:-my-5', loading && 'opacity-60')}>
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr className="border-b border-gray-100">
-                  <th className={TH}>Product</th>
-                  <th className={TH}>Reviewer</th>
-                  <th className={TH}>Rating</th>
-                  <th className={cn(TH, 'min-w-[200px]')}>Comment</th>
-                  <th className={TH}>Date</th>
-                  <th className={TH}>Status</th>
-                  <th className={cn(TH, 'text-right')}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {reviews.map((review) => {
-                  const name = review.reviewer_name || 'Anonymous';
-                  const comment = review.comment || '';
-                  return (
-                    <tr key={review.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-gray-900 text-xs line-clamp-2 max-w-[140px] block">
-                          {review.product_name || `Product #${review.product_id}`}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-7 w-7 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">
-                            {name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-medium text-gray-900 text-xs">{name}</div>
-                            {review.reviewer_email && (
-                              <div className="text-[10px] text-gray-400 truncate max-w-[120px]">{review.reviewer_email}</div>
-                            )}
-                            {review.is_verified_offline && (
-                              <div className="flex items-center gap-0.5 text-[10px] text-primary font-semibold">
-                                <BadgeCheck className="h-3 w-3" /> Verified
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <StarRating value={review.rating} size="sm" />
-                        <span className="text-[10px] text-gray-400 mt-0.5 block">{review.rating}/5</span>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {review.title && <div className="font-semibold text-gray-900 text-xs mb-0.5">{review.title}</div>}
-                        <p className="text-xs text-gray-500 line-clamp-2" title={comment}>
-                          {comment.length > 120 ? `${comment.slice(0, 120)}…` : comment}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(review.created_at)}</span>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <StatusPill approved={review.is_approved} />
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <ActionBtn
-                            onClick={() => handleApprove(review)}
-                            disabled={review.is_approved || actionLoading !== null}
-                            title={review.is_approved ? 'Already approved' : 'Approve review'}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </ActionBtn>
-                          <ActionBtn
-                            onClick={() => handleVerify(review)}
-                            disabled={review.is_verified_offline || actionLoading !== null}
-                            title={review.is_verified_offline ? 'Already verified' : 'Mark as verified purchase'}
-                          >
-                            <BadgeCheck className="h-4 w-4" />
-                          </ActionBtn>
-                          <ActionBtn
-                            onClick={() => handleDelete(review)}
-                            disabled={actionLoading !== null}
-                            title="Delete review"
-                            danger
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </ActionBtn>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ul className={cn('-mx-4 sm:-mx-5 -my-4 sm:-my-5 divide-y divide-espresso/8', loading && 'opacity-60')}>
+            {reviews.map((review) => (
+              <ReviewItem
+                key={review.id}
+                review={review}
+                busy={actionLoading !== null}
+                onApprove={handleApprove}
+                onVerify={handleVerify}
+                onDelete={handleDelete}
+              />
+            ))}
+          </ul>
         )}
       </Card>
 

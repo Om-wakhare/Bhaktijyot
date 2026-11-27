@@ -18,12 +18,12 @@ const STATUS_META = {
   contacted: { label: 'Contacted', className: 'bg-blue-100 text-blue-800' },
   booked: { label: 'Booked', className: 'bg-purple-100 text-purple-800' },
   completed: { label: 'Completed', className: 'bg-emerald-100 text-emerald-800' },
-  cancelled: { label: 'Cancelled', className: 'bg-gray-100 text-gray-500' },
+  cancelled: { label: 'Cancelled', className: 'bg-espresso/5 text-espresso/60' },
 };
 const STATUSES = Object.keys(STATUS_META);
 
 function statusMeta(status) {
-  return STATUS_META[status] ?? { label: status || '—', className: 'bg-gray-100 text-gray-700' };
+  return STATUS_META[status] ?? { label: status || '—', className: 'bg-espresso/5 text-espresso/80' };
 }
 
 function ConsultationRow({ item, onSaved }) {
@@ -60,13 +60,13 @@ function ConsultationRow({ item, onSaved }) {
   };
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+    <div className="border border-espresso/10 rounded-xl p-4 space-y-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900">{item.name}</span>
+            <span className="text-sm font-semibold text-espresso">{item.name}</span>
             <Pill className={meta.className}>{meta.label}</Pill>
-            <span className="text-[11px] text-gray-400">#{item.id} · {formatDateTime(item.created_at)}</span>
+            <span className="text-[11px] text-espresso/60">#{item.id} · {formatDateTime(item.created_at)}</span>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             <a href={`tel:${item.phone}`} className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
@@ -85,17 +85,17 @@ function ConsultationRow({ item, onSaved }) {
           </div>
         </div>
         <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs md:text-right md:min-w-[220px]">
-          <dt className="text-gray-500">Type</dt>
-          <dd className="font-medium text-gray-900">{item.consultation_type || '—'}</dd>
-          <dt className="text-gray-500">Preferred</dt>
-          <dd className="font-medium text-gray-900">{preferred || 'Any time'}</dd>
+          <dt className="text-espresso/60">Type</dt>
+          <dd className="font-medium text-espresso">{item.consultation_type || '—'}</dd>
+          <dt className="text-espresso/60">Preferred</dt>
+          <dd className="font-medium text-espresso">{preferred || 'Any time'}</dd>
         </dl>
       </div>
 
       <div>
-        <div className="text-xs font-semibold text-gray-500 mb-0.5">Concern</div>
+        <div className="text-xs font-semibold text-espresso/60 mb-0.5">Concern</div>
         {concern ? (
-          <p className="text-sm text-gray-700 whitespace-pre-line break-words">
+          <p className="text-sm text-espresso/80 whitespace-pre-line break-words">
             {expanded || !longConcern ? concern : `${concern.slice(0, CONCERN_PREVIEW).trimEnd()}…`}
             {longConcern && (
               <button
@@ -109,13 +109,13 @@ function ConsultationRow({ item, onSaved }) {
             )}
           </p>
         ) : (
-          <p className="text-sm text-gray-400">No details given.</p>
+          <p className="text-sm text-espresso/60">No details given.</p>
         )}
       </div>
 
-      <div className="grid gap-3 border-t border-gray-100 pt-3 sm:grid-cols-[180px,1fr,auto] sm:items-start">
+      <div className="grid gap-3 border-t border-espresso/8 pt-3 sm:grid-cols-[180px,1fr,auto] sm:items-start">
         <div>
-          <label htmlFor={`c-status-${item.id}`} className="block text-xs font-semibold text-gray-700 mb-1">Status</label>
+          <label htmlFor={`c-status-${item.id}`} className="block text-xs font-semibold text-espresso/80 mb-1">Status</label>
           <Select
             id={`c-status-${item.id}`}
             value={status}
@@ -129,8 +129,8 @@ function ConsultationRow({ item, onSaved }) {
           </Select>
         </div>
         <div>
-          <label htmlFor={`c-notes-${item.id}`} className="block text-xs font-semibold text-gray-700 mb-1">
-            Admin notes <span className="font-normal text-gray-400">(private)</span>
+          <label htmlFor={`c-notes-${item.id}`} className="block text-xs font-semibold text-espresso/80 mb-1">
+            Admin notes <span className="font-normal text-espresso/60">(private)</span>
           </label>
           <Textarea
             id={`c-notes-${item.id}`}
@@ -185,14 +185,25 @@ export function AdminConsultationsPage() {
       if (statusFilter) params.status_filter = statusFilter;
       const res = await api.get('/consultations', { params });
       if (!isCurrent()) return;
-      setItems(res.data?.items || []);
-      setTotal(res.data?.total || 0);
+      const nextItems = res.data?.items || [];
+      const nextTotal = res.data?.total || 0;
+      // Past the last page (old link, or requests moved to another status) — go to the last page
+      if (!nextItems.length && page > 1 && nextTotal > 0) {
+        const last = Math.max(1, Math.ceil(nextTotal / LIMIT));
+        const next = {};
+        if (statusFilter) next.status = statusFilter;
+        if (last > 1) next.page = String(last);
+        setSearchParams(next, { replace: true });
+        return;
+      }
+      setItems(nextItems);
+      setTotal(nextTotal);
     } catch (err) {
       if (isCurrent()) setLoadError(getErrorMessage(err, 'Could not load consultations.'));
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [page, statusFilter, beginRequest]);
+  }, [page, statusFilter, beginRequest, setSearchParams]);
 
   const loadNewCount = useCallback(async () => {
     try {

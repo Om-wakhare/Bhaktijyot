@@ -8,7 +8,8 @@ import { useToast } from '../../components/admin/Toast';
 import { useConfirm } from '../../components/admin/ConfirmDialog';
 import { fileExt, formatBytes, formatDateTime } from '../../components/admin/adminUtils';
 
-const IMAGE_ACCEPT = '.png,.jpg,.jpeg,.webp';
+// MIME types + extensions: Android file pickers filter on MIME type, desktop browsers on extension.
+const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp';
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp'];
 const MAX_TEMPLATE_BYTES = 15 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -236,10 +237,12 @@ export function AdminGenerateCertificatePage() {
             <form onSubmit={handleUploadTemplate} className="flex flex-wrap gap-3 items-end">
               <Field
                 label="Upload new template"
+                htmlFor="cert-template-file"
                 hint="PNG, JPG or WebP · max 15 MB. The file name becomes the template name, e.g. gemstone-portrait.png"
                 className="min-w-[240px] flex-1"
               >
                 <FileInput
+                  id="cert-template-file"
                   key={templateInputKey}
                   accept={IMAGE_ACCEPT}
                   onChange={onTemplateFileChange}
@@ -265,7 +268,7 @@ export function AdminGenerateCertificatePage() {
                 {templatesError}
               </Alert>
             ) : templatesLoading && !templates.length ? (
-              <p className="text-xs text-gray-400">Loading templates…</p>
+              <p className="text-xs text-espresso/60">Loading templates…</p>
             ) : templates.length > 0 ? (
               <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Certificate template">
                 {templates.map((t) => {
@@ -277,7 +280,7 @@ export function AdminGenerateCertificatePage() {
                         'flex items-center rounded-lg border text-sm transition-colors',
                         selected
                           ? 'border-gold bg-gold/12 font-semibold text-gold-800'
-                          : 'border-gray-200 hover:border-gray-400',
+                          : 'border-espresso/15 text-espresso hover:border-espresso/30',
                       )}
                     >
                       <button
@@ -285,7 +288,7 @@ export function AdminGenerateCertificatePage() {
                         role="radio"
                         aria-checked={selected}
                         onClick={() => setSelectedTemplate(t.name)}
-                        className="pl-3 pr-2 py-1.5"
+                        className="min-h-[36px] pl-3 pr-2 py-1.5"
                       >
                         {t.name}
                       </button>
@@ -294,7 +297,7 @@ export function AdminGenerateCertificatePage() {
                         onClick={() => handleDeleteTemplate(t.name)}
                         disabled={deletingTemplate === t.name}
                         aria-label={`Delete template ${t.name}`}
-                        className="pr-3 pl-1 py-1.5 text-red-400 hover:text-red-600 text-xs leading-none disabled:opacity-40"
+                        className="min-h-[36px] min-w-[32px] pr-3 pl-1 py-1.5 text-red-700 hover:text-red-800 text-xs leading-none disabled:opacity-40"
                       >
                         ✕
                       </button>
@@ -303,7 +306,7 @@ export function AdminGenerateCertificatePage() {
                 })}
               </div>
             ) : (
-              <p className="text-xs text-gray-400">No templates yet — upload one above.</p>
+              <p className="text-xs text-espresso/60">No templates yet — upload one above.</p>
             )}
           </div>
         </Card>
@@ -319,104 +322,105 @@ export function AdminGenerateCertificatePage() {
               {/* Images */}
               <Field
                 label="Gemstone photo (optional)"
+                htmlFor="cert-photo"
                 hint="Placed in the photo box on the certificate. PNG, JPG or WebP · max 8 MB."
                 error={productError || undefined}
               >
-                <FileInput key={productInputKey} accept={IMAGE_ACCEPT} onChange={onProductFileChange} />
+                <FileInput id="cert-photo" key={productInputKey} accept={IMAGE_ACCEPT} onChange={onProductFileChange} />
               </Field>
 
               {/* Identification */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Identification</p>
+                <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Identification</p>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Certificate No" hint="Auto-generated if left blank.">
-                    <Input name="certificate_no" value={fields.certificate_no} onChange={set('certificate_no')} placeholder="e.g. BJ-2025-001" />
+                  <Field label="Certificate No" htmlFor="cert-certificate_no" hint="Auto-generated if left blank.">
+                    <Input id="cert-certificate_no" name="certificate_no" value={fields.certificate_no} onChange={set('certificate_no')} placeholder="e.g. BJ-2025-001" />
                   </Field>
-                  <Field label="Issue Date">
-                    <Input name="issue_date" value={fields.issue_date} onChange={set('issue_date')} placeholder="e.g. 23 July 2025" />
+                  <Field label="Issue Date" htmlFor="cert-issue_date">
+                    <Input id="cert-issue_date" name="issue_date" value={fields.issue_date} onChange={set('issue_date')} placeholder="e.g. 23 July 2025" />
                   </Field>
-                  <Field label="Name of the Stone" className="sm:col-span-2">
-                    <Input name="stone_name" value={fields.stone_name} onChange={set('stone_name')} placeholder="e.g. Ruby Corundum" />
+                  <Field label="Name of the Stone" htmlFor="cert-stone_name" className="sm:col-span-2">
+                    <Input id="cert-stone_name" name="stone_name" value={fields.stone_name} onChange={set('stone_name')} placeholder="e.g. Ruby Corundum" />
                   </Field>
                 </div>
               </div>
 
               {/* Left column properties */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Left Column</p>
+                <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Left Column</p>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Colour">
-                    <Input name="colour" value={fields.colour} onChange={set('colour')} placeholder="e.g. Deep Red" />
+                  <Field label="Colour" htmlFor="cert-colour">
+                    <Input id="cert-colour" name="colour" value={fields.colour} onChange={set('colour')} placeholder="e.g. Deep Red" />
                   </Field>
-                  <Field label="Shape">
-                    <Input name="shape" value={fields.shape} onChange={set('shape')} placeholder="e.g. Oval" />
+                  <Field label="Shape" htmlFor="cert-shape">
+                    <Input id="cert-shape" name="shape" value={fields.shape} onChange={set('shape')} placeholder="e.g. Oval" />
                   </Field>
-                  <Field label="Transparency">
-                    <Input name="transparency" value={fields.transparency} onChange={set('transparency')} placeholder="e.g. Transparent" />
+                  <Field label="Transparency" htmlFor="cert-transparency">
+                    <Input id="cert-transparency" name="transparency" value={fields.transparency} onChange={set('transparency')} placeholder="e.g. Transparent" />
                   </Field>
-                  <Field label="Hardness">
-                    <Input name="hardness" value={fields.hardness} onChange={set('hardness')} placeholder="e.g. 9 (Mohs)" />
+                  <Field label="Hardness" htmlFor="cert-hardness">
+                    <Input id="cert-hardness" name="hardness" value={fields.hardness} onChange={set('hardness')} placeholder="e.g. 9 (Mohs)" />
                   </Field>
-                  <Field label="Magnification">
-                    <Input name="magnification" value={fields.magnification} onChange={set('magnification')} placeholder="e.g. 10×" />
+                  <Field label="Magnification" htmlFor="cert-magnification">
+                    <Input id="cert-magnification" name="magnification" value={fields.magnification} onChange={set('magnification')} placeholder="e.g. 10×" />
                   </Field>
-                  <Field label="Treatment">
-                    <Input name="treatment" value={fields.treatment} onChange={set('treatment')} placeholder="e.g. Untreated / No Heat" />
+                  <Field label="Treatment" htmlFor="cert-treatment">
+                    <Input id="cert-treatment" name="treatment" value={fields.treatment} onChange={set('treatment')} placeholder="e.g. Untreated / No Heat" />
                   </Field>
                 </div>
               </div>
 
               {/* Right column properties */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Right Column</p>
+                <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Right Column</p>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Weight">
-                    <Input name="weight" value={fields.weight} onChange={set('weight')} placeholder="e.g. 3.45 Cts" />
+                  <Field label="Weight" htmlFor="cert-weight">
+                    <Input id="cert-weight" name="weight" value={fields.weight} onChange={set('weight')} placeholder="e.g. 3.45 Cts" />
                   </Field>
-                  <Field label="Cut">
-                    <Input name="cut" value={fields.cut} onChange={set('cut')} placeholder="e.g. Brilliant" />
+                  <Field label="Cut" htmlFor="cert-cut">
+                    <Input id="cert-cut" name="cut" value={fields.cut} onChange={set('cut')} placeholder="e.g. Brilliant" />
                   </Field>
-                  <Field label="RI (Refractive Index)">
-                    <Input name="ri" value={fields.ri} onChange={set('ri')} placeholder="e.g. 1.762 – 1.770" />
+                  <Field label="RI (Refractive Index)" htmlFor="cert-ri">
+                    <Input id="cert-ri" name="ri" value={fields.ri} onChange={set('ri')} placeholder="e.g. 1.762 – 1.770" />
                   </Field>
-                  <Field label="Specific Gravity">
-                    <Input name="specific_gravity" value={fields.specific_gravity} onChange={set('specific_gravity')} placeholder="e.g. 3.99 – 4.01" />
+                  <Field label="Specific Gravity" htmlFor="cert-specific_gravity">
+                    <Input id="cert-specific_gravity" name="specific_gravity" value={fields.specific_gravity} onChange={set('specific_gravity')} placeholder="e.g. 3.99 – 4.01" />
                   </Field>
-                  <Field label="Observation">
-                    <Input name="observation" value={fields.observation} onChange={set('observation')} placeholder="e.g. Natural, No Treatment" />
+                  <Field label="Observation" htmlFor="cert-observation">
+                    <Input id="cert-observation" name="observation" value={fields.observation} onChange={set('observation')} placeholder="e.g. Natural, No Treatment" />
                   </Field>
-                  <Field label="Origin">
-                    <Input name="origin" value={fields.origin} onChange={set('origin')} placeholder="e.g. Burma / India" />
+                  <Field label="Origin" htmlFor="cert-origin">
+                    <Input id="cert-origin" name="origin" value={fields.origin} onChange={set('origin')} placeholder="e.g. Burma / India" />
                   </Field>
                 </div>
               </div>
 
               {/* Remarks & signatory */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Remarks &amp; Signatory</p>
+                <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Remarks &amp; Signatory</p>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Remark" hint="Auto-wrapped inside the remark box on the certificate.">
-                    <Input name="remark" value={fields.remark} onChange={set('remark')} placeholder="e.g. Certified Natural Gemstone" />
+                  <Field label="Remark" htmlFor="cert-remark" hint="Auto-wrapped inside the remark box on the certificate.">
+                    <Input id="cert-remark" name="remark" value={fields.remark} onChange={set('remark')} placeholder="e.g. Certified Natural Gemstone" />
                   </Field>
-                  <Field label="On Behalf Of">
-                    <Input name="on_behalf" value={fields.on_behalf} onChange={set('on_behalf')} placeholder="Customer or company name" />
+                  <Field label="On Behalf Of" htmlFor="cert-on_behalf">
+                    <Input id="cert-on_behalf" name="on_behalf" value={fields.on_behalf} onChange={set('on_behalf')} placeholder="Customer or company name" />
                   </Field>
                 </div>
               </div>
 
               {/* Landscape-only fields */}
-              <details className="text-xs text-gray-400">
-                <summary className="cursor-pointer font-semibold uppercase tracking-wide text-gray-400 mb-2">Landscape template only ▸</summary>
+              <details className="text-xs text-espresso/60">
+                <summary className="cursor-pointer font-semibold uppercase tracking-wide text-espresso/60 mb-2">Landscape template only ▸</summary>
                 <div className="grid gap-3 sm:grid-cols-2 mt-2">
-                  <Field label="Size">
-                    <Input name="size" value={fields.size} onChange={set('size')} placeholder="e.g. 8.2 × 6.1 mm" />
+                  <Field label="Size" htmlFor="cert-size">
+                    <Input id="cert-size" name="size" value={fields.size} onChange={set('size')} placeholder="e.g. 8.2 × 6.1 mm" />
                   </Field>
-                  <Field label="Report For">
-                    <Input name="report_for" value={fields.report_for} onChange={set('report_for')} placeholder="Customer name" />
+                  <Field label="Report For" htmlFor="cert-report_for">
+                    <Input id="cert-report_for" name="report_for" value={fields.report_for} onChange={set('report_for')} placeholder="Customer name" />
                   </Field>
                 </div>
-                <Field label="Free text" hint="Extra notes appended on the landscape template." className="mt-3">
-                  <Textarea rows={2} value={freeText} onChange={(e) => setFreeText(e.target.value)} placeholder="Additional notes..." />
+                <Field label="Free text" htmlFor="cert-free-text" hint="Extra notes appended on the landscape template." className="mt-3">
+                  <Textarea id="cert-free-text" rows={2} value={freeText} onChange={(e) => setFreeText(e.target.value)} placeholder="Additional notes..." />
                 </Field>
               </details>
 
@@ -436,7 +440,7 @@ export function AdminGenerateCertificatePage() {
           <Card title="Preview" subtitle="Generated certificate preview.">
             {result ? (
               <div className="space-y-3">
-                <div className="text-xs text-gray-700 space-y-1">
+                <div className="text-xs text-espresso/80 space-y-1">
                   <div><span className="font-semibold">Code:</span> {result.certificate_code}</div>
                   <div><span className="font-semibold">Template:</span> {result.template}</div>
                   <div><span className="font-semibold">Created:</span> {formatDateTime(result.created_at)}</div>
@@ -446,7 +450,7 @@ export function AdminGenerateCertificatePage() {
                     <img
                       src={mediaUrl(result.generated_image_path)}
                       alt={`Certificate ${result.certificate_code}`}
-                      className="border border-gray-200 rounded-xl w-full object-contain max-h-96"
+                      className="border border-espresso/10 rounded-xl w-full object-contain max-h-96"
                     />
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       {resultPdf && (
@@ -463,17 +467,17 @@ export function AdminGenerateCertificatePage() {
                         href={mediaUrl(result.generated_image_path)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-gray-600 font-medium hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-espresso/70 font-medium hover:underline"
                       >
                         Open PNG
                       </a>
                     </div>
-                    <p className="mt-2 text-[11px] text-gray-500">Opens in a new tab — save or print it from there.</p>
+                    <p className="mt-2 text-[11px] text-espresso/60">Opens in a new tab — save or print it from there.</p>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="text-sm text-gray-500 py-8 text-center">
+              <div className="text-sm text-espresso/60 py-8 text-center">
                 Generate a certificate to see the preview here.
               </div>
             )}

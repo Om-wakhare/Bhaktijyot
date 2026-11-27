@@ -1,4 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from './ui';
 
 /**
@@ -9,99 +12,71 @@ import { Button } from './ui';
  *
  * Options: title, message (string or node), confirmLabel ('Confirm'), cancelLabel ('Cancel';
  * pass null for a single-button notice), tone ('default' | 'danger').
- * Resolves true on confirm, false on cancel / Escape / backdrop click / a newer dialog / unmount.
+ * Resolves true on confirm, false on cancel / Escape / outside click / a newer dialog / unmount.
+ *
+ * Built on the shadcn (Radix) Dialog, which handles the focus trap, Escape, scroll lock,
+ * focus return and aria wiring.
  */
 
 const ConfirmContext = createContext(null);
 
 function ConfirmModal({ dialog, onSettle }) {
-  const titleId = useId();
-  const bodyId = useId();
-  const panelRef = useRef(null);
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
+  const danger = dialog.tone === 'danger';
 
-  useEffect(() => {
-    // Safer default focus for destructive actions
-    const target = dialog.tone === 'danger' && cancelRef.current ? cancelRef.current : confirmRef.current;
-    target?.focus();
-  }, [dialog]);
-
-  const onKeyDown = (e) => {
-    if (e.key === 'Escape') {
+  // Safer default focus for destructive actions: Cancel. Otherwise the confirm button.
+  const onOpenAutoFocus = (e) => {
+    const target = danger && cancelRef.current ? cancelRef.current : confirmRef.current;
+    if (target) {
       e.preventDefault();
-      e.stopPropagation();
-      onSettle(false);
-      return;
-    }
-    if (e.key === 'Tab') {
-      // Keep focus inside the dialog
-      const focusables = panelRef.current?.querySelectorAll('button:not([disabled]), a[href]') ?? [];
-      if (!focusables.length) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
+      target.focus();
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[10040] flex items-center justify-center p-4" onKeyDown={onKeyDown}>
-      <div className="absolute inset-0 bg-black/50" aria-hidden="true" onClick={() => onSettle(false)} />
-      <div
-        ref={panelRef}
+    <Dialog open onOpenChange={(open) => { if (!open) onSettle(false); }}>
+      <DialogContent
         role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={dialog.message ? bodyId : undefined}
-        className="relative w-full max-w-md rounded-2xl bg-white p-5 sm:p-6 shadow-2xl"
+        hideClose
+        onOpenAutoFocus={onOpenAutoFocus}
+        {...(dialog.message ? {} : { 'aria-describedby': undefined })}
+        className="w-[calc(100%-2rem)] max-w-md gap-0 rounded-2xl border-espresso/10 bg-white p-5 shadow-2xl sm:rounded-2xl sm:p-6"
       >
-        <h2 id={titleId} className="text-base font-semibold text-gray-900">
-          {dialog.title}
-        </h2>
-        {dialog.message && (
-          <div id={bodyId} className="mt-2 text-sm text-gray-600 whitespace-pre-line">
-            {dialog.message}
-          </div>
-        )}
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <DialogHeader className="space-y-0 text-left">
+          <DialogTitle className="text-base font-semibold leading-snug text-espresso">
+            {dialog.title}
+          </DialogTitle>
+          {dialog.message && (
+            <DialogDescription asChild>
+              <div className="mt-2 whitespace-pre-line text-sm text-espresso/75">{dialog.message}</div>
+            </DialogDescription>
+          )}
+        </DialogHeader>
+        <DialogFooter className="mt-5 gap-2 sm:space-x-0">
           {dialog.cancelLabel && (
             <Button ref={cancelRef} variant="outline" onClick={() => onSettle(false)}>
               {dialog.cancelLabel}
             </Button>
           )}
-          <Button
-            ref={confirmRef}
-            variant={dialog.tone === 'danger' ? 'danger' : 'primary'}
-            onClick={() => onSettle(true)}
-          >
+          <Button ref={confirmRef} variant={danger ? 'danger' : 'primary'} onClick={() => onSettle(true)}>
             {dialog.confirmLabel}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function ConfirmProvider({ children }) {
   const [dialog, setDialog] = useState(null);
   const resolverRef = useRef(null);
-  const returnFocusRef = useRef(null);
+  const seqRef = useRef(0);
 
   const settle = useCallback((value) => {
     const resolve = resolverRef.current;
     resolverRef.current = null;
     setDialog(null);
-    const el = returnFocusRef.current;
-    returnFocusRef.current = null;
-    if (el && typeof el.focus === 'function' && document.contains(el)) {
-      window.setTimeout(() => el.focus(), 0);
-    }
     resolve?.(value);
   }, []);
 
@@ -112,7 +87,8 @@ export function ConfirmProvider({ children }) {
       resolverRef.current = null;
       previous(false);
     }
-    if (!returnFocusRef.current) returnFocusRef.current = document.activeElement;
+    seqRef.current += 1;
+    const id = seqRef.current;
     return new Promise((resolve) => {
       resolverRef.current = resolve;
       setDialog({
@@ -121,6 +97,7 @@ export function ConfirmProvider({ children }) {
         cancelLabel: 'Cancel',
         tone: 'default',
         ...options,
+        id,
       });
     });
   }, []);
@@ -142,7 +119,7 @@ export function ConfirmProvider({ children }) {
   return (
     <ConfirmContext.Provider value={value}>
       {children}
-      {dialog && <ConfirmModal dialog={dialog} onSettle={settle} />}
+      {dialog && <ConfirmModal key={dialog.id} dialog={dialog} onSettle={settle} />}
     </ConfirmContext.Provider>
   );
 }

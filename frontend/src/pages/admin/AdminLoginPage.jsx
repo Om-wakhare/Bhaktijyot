@@ -31,8 +31,9 @@ export function AdminLoginPage() {
     } catch (err) {
       const status = err?.response?.status;
       if (status === 401) {
-        setError('Invalid username or password.');
+        setError('That username or password is not correct. Please check and try again.');
       } else if (status === 429) {
+        // Per-IP throttle on the server: wait for the window to pass, then try again
         setError(getErrorMessage(err, 'Too many failed login attempts. Please wait a few minutes and try again.'));
       } else {
         // Network / CORS / server errors are not a credentials problem
@@ -46,7 +47,7 @@ export function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-espresso p-4">
       {/* Background glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(200,117,26,0.12),transparent_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(201,168,76,0.12),transparent_60%)]" aria-hidden="true" />
 
       <div className="relative w-full max-w-sm">
         {/* Card */}
@@ -57,44 +58,46 @@ export function AdminLoginPage() {
               <SparkleIcon />
             </div>
             <div>
-              <div className="text-sm font-bold text-white leading-tight">Bhaktijyot</div>
-              <div className="text-[10px] text-white/40 uppercase tracking-widest font-medium">Admin Panel</div>
+              <div className="font-display text-sm font-bold text-white leading-tight">Bhaktijyot</div>
+              <div className="text-[10px] text-white/65 uppercase tracking-widest font-medium">Admin Panel</div>
             </div>
           </div>
 
-          <h1 className="text-xl font-semibold text-white mb-1">Welcome back</h1>
-          <p className="text-sm text-white/40 mb-7">Sign in to access the admin dashboard.</p>
+          <h1 className="font-display text-2xl font-semibold text-white mb-1">Welcome back</h1>
+          <p className="text-sm text-white/70 mb-7">Sign in to access the admin dashboard.</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-white/60 mb-2">Username</label>
+              <label htmlFor="admin-username" className="block text-xs font-semibold text-white/75 mb-2">Username</label>
               <input
+                id="admin-username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
                 required
                 placeholder="admin"
-                className="w-full bg-white/5 border border-white/10 text-white placeholder:text-white/20 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                className="w-full bg-white/5 border border-white/10 text-white placeholder:text-white/45 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold/60 focus:border-gold transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-white/60 mb-2">Password</label>
+              <label htmlFor="admin-password" className="block text-xs font-semibold text-white/75 mb-2">Password</label>
               <div className="relative">
                 <input
+                  id="admin-password"
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                   required
                   placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 text-white placeholder:text-white/20 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  className="w-full bg-white/5 border border-white/10 text-white placeholder:text-white/45 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-gold/60 focus:border-gold transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass((v) => !v)}
                   aria-label={showPass ? 'Hide password' : 'Show password'}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 w-9 flex items-center justify-center rounded-lg text-white/60 hover:text-white transition-colors"
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -102,7 +105,7 @@ export function AdminLoginPage() {
             </div>
 
             {error && (
-              <div role="alert" className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+              <div role="alert" className="text-xs text-red-200 bg-red-400/10 border border-red-400/30 rounded-lg px-3 py-2">
                 {error}
               </div>
             )}
@@ -110,14 +113,14 @@ export function AdminLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors mt-2"
+              className="w-full py-3 rounded-xl bg-gold text-espresso text-sm font-bold hover:bg-gold-light focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-light focus-visible:ring-offset-2 focus-visible:ring-offset-espresso-600 disabled:opacity-60 transition-colors mt-2"
             >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
         </div>
 
-        <p className="mt-5 text-center text-xs text-white/20">
+        <p className="mt-5 text-center text-xs text-white/55">
           Bhaktijyot Admin · Private access only
         </p>
       </div>

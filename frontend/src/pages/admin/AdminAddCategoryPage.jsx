@@ -4,7 +4,7 @@ import api, { getErrorMessage } from '../../services/apiClient';
 import { Alert, Button, Card, Field, Input, Page, Select, Textarea } from '../../components/admin/ui';
 import { useToast } from '../../components/admin/Toast';
 import {
-  SLUG_HINT, SLUG_RE, WORLD_HINT, WORLD_OPTIONS, flattenTree, indentLabel, slugify,
+  SLUG_HINT, SLUG_RE, WORLD_HINT, WORLD_OPTIONS, flattenTree, indentLabel, slugConflictMessage, slugify,
 } from '../../components/admin/adminUtils';
 
 const EMPTY = { name: '', slug: '', description: '', parent_id: '', world: '' };
@@ -75,7 +75,7 @@ export function AdminAddCategoryPage() {
       navigate('/admin/categories');
     } catch (err) {
       // e.g. 409 "Category slug already exists", 400 parent not found, 422 slug format
-      setError(getErrorMessage(err, 'Could not create the category.'));
+      setError(slugConflictMessage(err, 'category', slug, 'Could not create the category.'));
       setSaving(false);
     }
   };
@@ -99,16 +99,17 @@ export function AdminAddCategoryPage() {
             <Input id="c-slug" name="slug" value={form.slug} onChange={handleChange} required />
           </Field>
 
-          <Field label="Description (optional)">
-            <Textarea name="description" value={form.description} onChange={handleChange} rows={3} maxLength={1000} />
+          <Field label="Description (optional)" htmlFor="c-description">
+            <Textarea id="c-description" name="description" value={form.description} onChange={handleChange} rows={3} maxLength={1000} />
           </Field>
 
           <Field
             label="Parent category"
+            htmlFor="c-parent"
             hint={treeError ? undefined : "Leave as 'No parent' for a top-level category."}
             error={treeError || undefined}
           >
-            <Select name="parent_id" value={form.parent_id} onChange={handleChange}>
+            <Select id="c-parent" name="parent_id" value={form.parent_id} onChange={handleChange}>
               <option value="">No parent (top level)</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{indentLabel(c.level, c.name)}</option>
@@ -123,13 +124,14 @@ export function AdminAddCategoryPage() {
 
           <Field
             label="World"
+            htmlFor="c-world"
             hint={
               parent
                 ? `${WORLD_HINT} Leave as None to inherit from “${parent.name}”.`
                 : WORLD_HINT
             }
           >
-            <Select name="world" value={form.world} onChange={handleChange}>
+            <Select id="c-world" name="world" value={form.world} onChange={handleChange}>
               {WORLD_OPTIONS.map((o) => (
                 <option key={o.value || 'none'} value={o.value}>{o.label}</option>
               ))}

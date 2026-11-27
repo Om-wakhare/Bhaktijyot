@@ -9,7 +9,7 @@ import { useToast } from '../../components/admin/Toast';
 import { useConfirm } from '../../components/admin/ConfirmDialog';
 import {
   ORDER_FILTER_STATUSES, ORDER_SETTABLE_STATUSES, ORDER_STATUS_RANK, formatDateTime, formatINR,
-  orderStatusMeta, useLatestRequest,
+  orderStatusMeta, useLatestRequest, whatsappLink,
 } from '../../components/admin/adminUtils';
 
 const LIMIT = 20;
@@ -88,14 +88,25 @@ export function AdminOrdersPage() {
       if (statusFilter) params.status_filter = statusFilter;
       const res = await api.get('/orders', { params });
       if (!isCurrent()) return;
-      setOrders(res.data?.items || []);
-      setTotal(res.data?.total || 0);
+      const items = res.data?.items || [];
+      const nextTotal = res.data?.total || 0;
+      // Past the last page (e.g. the only order on it moved to another status) — go to the last page
+      if (!items.length && page > 1 && nextTotal > 0) {
+        const last = Math.max(1, Math.ceil(nextTotal / LIMIT));
+        const next = {};
+        if (statusFilter) next.status = statusFilter;
+        if (last > 1) next.page = String(last);
+        setSearchParams(next, { replace: true });
+        return;
+      }
+      setOrders(items);
+      setTotal(nextTotal);
     } catch (err) {
       if (isCurrent()) setLoadError(getErrorMessage(err, 'Could not load orders.'));
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [page, statusFilter, beginRequest]);
+  }, [page, statusFilter, beginRequest, setSearchParams]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
@@ -145,7 +156,7 @@ export function AdminOrdersPage() {
       <Card>
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <span className="text-xs font-semibold text-gray-600">Filter:</span>
+          <span className="text-xs font-semibold text-espresso/70">Filter:</span>
           {[''].concat(ORDER_FILTER_STATUSES).map((s) => {
             const active = statusFilter === s;
             return (
@@ -155,12 +166,12 @@ export function AdminOrdersPage() {
                 aria-pressed={active}
                 onClick={() => setFilter(s)}
                 className={cn(
-                  'px-3 py-1.5 rounded-full text-xs font-semibold border',
+                  'min-h-[36px] px-3 py-1.5 rounded-full text-xs font-semibold border',
                   active
                     ? 'bg-primary text-white border-primary'
                     : s === 'abandoned'
-                      ? 'border-gray-200 text-gray-400 hover:bg-gray-100'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-100',
+                      ? 'border-espresso/10 text-espresso/60 hover:bg-espresso/5'
+                      : 'border-espresso/20 text-espresso/80 hover:bg-espresso/5',
                 )}
               >
                 {s ? orderStatusMeta(s).label : 'All'}
@@ -184,48 +195,60 @@ export function AdminOrdersPage() {
               const items = order.items ?? [];
               const panelId = `order-panel-${order.id}`;
               return (
-                <div key={order.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                <div key={order.id} className="border border-espresso/10 rounded-xl overflow-hidden">
                   {/* Order header */}
                   <button
                     type="button"
                     aria-expanded={expanded}
                     aria-controls={panelId}
                     onClick={() => setExpandedId(expanded ? null : order.id)}
-                    className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center justify-between gap-3"
+                    className="w-full text-left px-4 py-3 bg-ivory hover:bg-espresso/5 flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-x-4 gap-y-1 flex-wrap min-w-0">
-                      <span className="text-sm font-bold text-gray-900">#{order.id}</span>
+                      <span className="text-sm font-bold text-espresso">#{order.id}</span>
                       <Pill className={cn('uppercase tracking-wide', meta.className)}>{meta.label}</Pill>
-                      <span className={cn('text-sm font-semibold', order.status === 'abandoned' ? 'text-gray-400' : 'text-gray-900')}>
+                      <span className={cn('text-sm font-semibold', order.status === 'abandoned' ? 'text-espresso/60' : 'text-espresso')}>
                         {formatINR(order.total_amount)}
                       </span>
-                      <span className="text-xs text-gray-500">{order.customer_name}</span>
-                      <span className="text-xs text-gray-500">{formatDateTime(order.created_at)}</span>
+                      <span className="text-xs text-espresso/60">{order.customer_name}</span>
+                      <span className="text-xs text-espresso/60">{formatDateTime(order.created_at)}</span>
                       {notes.system.length > 0 && (
-                        <span className="text-[11px] font-semibold text-amber-700">system note</span>
+                        <span className="text-[11px] font-semibold text-gold-700">system note</span>
                       )}
                     </div>
-                    <span className="text-gray-400 shrink-0" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
+                    <span className="text-espresso/60 shrink-0" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
                   </button>
 
                   {/* Order details */}
                   {expanded && (
-                    <div id={panelId} className="px-4 py-4 space-y-4 border-t border-gray-200">
+                    <div id={panelId} className="px-4 py-4 space-y-4 border-t border-espresso/10">
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
-                          <div className="text-xs font-semibold text-gray-500 mb-1">Customer</div>
-                          <div className="text-sm text-gray-900">{order.customer_name}</div>
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Customer</div>
+                          <div className="text-sm text-espresso">{order.customer_name}</div>
                           {order.customer_phone && (
-                            <a href={`tel:${order.customer_phone}`} className="block text-xs text-primary hover:underline">
-                              {order.customer_phone}
-                            </a>
+                            <div className="flex flex-wrap items-center gap-x-3 text-xs">
+                              <a href={`tel:${order.customer_phone}`} className="font-semibold text-primary hover:underline">
+                                {order.customer_phone}
+                              </a>
+                              {whatsappLink(order.customer_phone) && (
+                                <a
+                                  href={whatsappLink(order.customer_phone)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-semibold text-emerald-800 hover:underline"
+                                >
+                                  WhatsApp
+                                </a>
+                              )}
+                            </div>
                           )}
-                          {order.customer_email && <div className="text-xs text-gray-600">{order.customer_email}</div>}
+                          {order.customer_email && <div className="text-xs text-espresso/70">{order.customer_email}</div>}
                         </div>
                         <div>
-                          <div className="text-xs font-semibold text-gray-500 mb-1">Shipping Address</div>
-                          <div className="text-sm text-gray-900">{order.customer_address}</div>
-                          <div className="text-xs text-gray-600">
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Shipping Address</div>
+                          <div className="text-sm text-espresso">{order.customer_address}</div>
+                          <div className="text-xs text-espresso/70">
                             {[order.customer_city, order.customer_state].filter(Boolean).join(', ')}
                             {order.customer_pincode ? ` — ${order.customer_pincode}` : ''}
                           </div>
@@ -234,8 +257,8 @@ export function AdminOrdersPage() {
 
                       {(order.razorpay_order_id || order.razorpay_payment_id) && (
                         <div>
-                          <div className="text-xs font-semibold text-gray-500 mb-1">Payment</div>
-                          <div className="text-xs text-gray-700 space-y-0.5">
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Payment</div>
+                          <div className="text-xs text-espresso/80 space-y-0.5">
                             {order.razorpay_order_id && <div>Razorpay Order: <span className="font-mono">{order.razorpay_order_id}</span></div>}
                             {order.razorpay_payment_id && <div>Payment ID: <span className="font-mono">{order.razorpay_payment_id}</span></div>}
                           </div>
@@ -244,15 +267,15 @@ export function AdminOrdersPage() {
 
                       {notes.customer.length > 0 && (
                         <div>
-                          <div className="text-xs font-semibold text-gray-500 mb-1">Customer notes</div>
-                          <div className="text-sm text-gray-700 whitespace-pre-line">{notes.customer.join('\n')}</div>
+                          <div className="text-xs font-semibold text-espresso/60 mb-1">Note from the customer</div>
+                          <div className="text-sm text-espresso/80 whitespace-pre-line">{notes.customer.join('\n')}</div>
                         </div>
                       )}
 
                       {notes.system.length > 0 && (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                          <div className="text-xs font-semibold text-amber-800 mb-1">System notes</div>
-                          <ul className="text-xs text-amber-900 space-y-0.5 list-disc pl-4">
+                        <div className="rounded-lg border border-gold-200 bg-gold-50 px-3 py-2">
+                          <div className="text-xs font-semibold text-gold-800 mb-1">System notes (added automatically)</div>
+                          <ul className="text-xs text-gold-900 space-y-0.5 list-disc pl-4">
                             {notes.system.map((line, i) => <li key={i}>{line}</li>)}
                           </ul>
                         </div>
@@ -260,20 +283,20 @@ export function AdminOrdersPage() {
 
                       {/* Items */}
                       <div>
-                        <div className="text-xs font-semibold text-gray-500 mb-2">Items ({items.length})</div>
+                        <div className="text-xs font-semibold text-espresso/60 mb-2">Items ({items.length})</div>
                         <div className="space-y-2">
                           {items.map((item) => (
-                            <div key={item.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-2">
-                              <div className="h-12 w-12 rounded-md bg-gray-200 overflow-hidden shrink-0">
+                            <div key={item.id} className="flex items-center gap-3 bg-ivory rounded-lg p-2">
+                              <div className="h-12 w-12 rounded-md bg-espresso/10 overflow-hidden shrink-0">
                                 {item.product_image_path ? (
                                   <img src={mediaUrl(item.product_image_path)} alt="" className="h-full w-full object-cover" />
                                 ) : (
-                                  <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400">—</div>
+                                  <div className="h-full w-full flex items-center justify-center text-[10px] text-espresso/60">—</div>
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-gray-900 truncate">{item.product_name}</div>
-                                <div className="text-xs text-gray-600">
+                                <div className="text-sm font-semibold text-espresso truncate">{item.product_name}</div>
+                                <div className="text-xs text-espresso/70">
                                   {formatINR(item.price)} × {item.quantity}
                                   {' = '}
                                   <span className="font-semibold">{formatINR(Number(item.price) * item.quantity)}</span>
@@ -285,8 +308,8 @@ export function AdminOrdersPage() {
                       </div>
 
                       {/* Update status */}
-                      <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-200">
-                        <label htmlFor={`status-${order.id}`} className="text-xs font-semibold text-gray-600">
+                      <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-espresso/10">
+                        <label htmlFor={`status-${order.id}`} className="text-xs font-semibold text-espresso/70">
                           Status:
                         </label>
                         <Select
@@ -303,9 +326,9 @@ export function AdminOrdersPage() {
                             <option key={s} value={s}>{orderStatusMeta(s).label}</option>
                           ))}
                         </Select>
-                        {updatingId === order.id && <span className="text-xs text-gray-500">Updating…</span>}
+                        {updatingId === order.id && <span className="text-xs text-espresso/60">Updating…</span>}
                         {order.status === 'abandoned' && (
-                          <span className="text-[11px] text-gray-500">
+                          <span className="text-[11px] text-espresso/60">
                             The customer didn’t finish paying. Set a status only if you received payment another way.
                           </span>
                         )}

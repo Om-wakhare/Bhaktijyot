@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Star, Trash2 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import { ImageUploader } from '../../components/admin/ImageUploader';
+import { StockField } from '../../components/admin/StockField';
 import {
   Alert, Button, Card, ErrorState, Field, FileInput, Input, LoadingState, Page, Select, Textarea, Toggle, cn,
 } from '../../components/admin/ui';
 import { useToast } from '../../components/admin/Toast';
 import { useConfirm } from '../../components/admin/ConfirmDialog';
 import {
-  SLUG_HINT, flattenTree, formatBytes, httpStatus, indentLabel, useLatestRequest,
+  SLUG_HINT, flattenTree, formatBytes, httpStatus, indentLabel, slugConflictMessage, useLatestRequest,
 } from '../../components/admin/adminUtils';
 import {
   BADGE_PRESETS, EMPTY_PRODUCT_FORM, VIDEO_ACCEPT, discountPct, formFromProduct, generateSlug,
@@ -131,7 +133,7 @@ export function AdminEditProductPage() {
       setForm(formFromProduct(res.data));
       toast.success('Product saved');
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Save failed.'));
+      toast.error(slugConflictMessage(err, 'product', form.slug.trim(), 'Could not save the product.'));
     } finally {
       setSaving(false);
     }
@@ -228,30 +230,39 @@ export function AdminEditProductPage() {
     }
   };
 
-  // Drag-to-reorder
-  const handleDragStart = (idx) => { dragSrc.current = idx; };
-  const handleDragEnterSlot = (idx) => setDragOver(idx);
-  const handleDragEnd = async () => {
-    const target = dragOver;
-    setDragOver(null);
-    if (dragSrc.current === null) return;
-    const from = dragSrc.current;
-    dragSrc.current = null;
-    if (target === null || target === from) return;
+  // Reorder (drag on a computer, arrow buttons on phones). The first image is the primary one.
+  const moveImage = async (from, to) => {
+    if (from === to || to < 0 || to >= existingImages.length || imageBusyId) return;
     const reordered = [...existingImages];
     const [moved] = reordered.splice(from, 1);
-    reordered.splice(target, 0, moved);
+    reordered.splice(to, 0, moved);
     setExistingImages(reordered);
+    setImageBusyId(moved.id);
     try {
       const res = await api.put(`/products/${id}/images/reorder`, {
         image_ids: reordered.map((img) => img.id),
       });
       if (Array.isArray(res.data)) setExistingImages(sortImages(res.data));
       await refreshMedia().catch(() => {});
+      toast.success(to === 0 || from === 0 ? 'Order saved. Primary image updated.' : 'Image order saved');
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Reorder failed.'));
+      toast.error(getErrorMessage(err, 'Could not change the image order.'));
       refreshMedia().catch(() => {});
+    } finally {
+      setImageBusyId(null);
     }
+  };
+
+  const handleDragStart = (idx) => { dragSrc.current = idx; };
+  const handleDragEnterSlot = (idx) => setDragOver(idx);
+  const handleDragEnd = () => {
+    const target = dragOver;
+    setDragOver(null);
+    if (dragSrc.current === null) return;
+    const from = dragSrc.current;
+    dragSrc.current = null;
+    if (target === null || target === from) return;
+    moveImage(from, target);
   };
 
   // ── Delete / unpublish product ─────────────────────────────
@@ -334,7 +345,7 @@ export function AdminEditProductPage() {
       <form onSubmit={handleSave} className="space-y-5 max-w-3xl" noValidate>
         {/* ── Core fields ─────────────────────────────────── */}
         <Card title="Product Details">
-          <div className="mb-5 pb-4 border-b border-gray-100">
+          <div className="mb-5 pb-4 border-b border-espresso/8">
             <Toggle
               checked={form.is_active}
               onChange={(v) => setForm((p) => ({ ...p, is_active: v }))}
@@ -365,16 +376,17 @@ export function AdminEditProductPage() {
             </div>
 
             {/* Description + Benefits */}
-            <Field label="Description">
-              <Textarea name="description" value={form.description} onChange={handleChange} rows={6} />
+            <Field label="Description" htmlFor="ep-description">
+              <Textarea id="ep-description" name="description" value={form.description} onChange={handleChange} rows={6} />
             </Field>
-            <Field label="Benefits">
-              <Textarea name="benefits" value={form.benefits} onChange={handleChange} rows={6} />
+            <Field label="Benefits" htmlFor="ep-benefits">
+              <Textarea id="ep-benefits" name="benefits" value={form.benefits} onChange={handleChange} rows={6} />
             </Field>
 
             {/* Badge */}
-            <Field label="Badge (top-left label on product card)">
+            <Field label="Badge (top-left label on product card)" htmlFor="ep-badge">
               <Input
+                id="ep-badge"
                 name="badge" value={form.badge} onChange={handleChange} maxLength={100}
                 placeholder="e.g. Bestseller, New Arrival — leave blank for none"
               />
@@ -386,10 +398,10 @@ export function AdminEditProductPage() {
                     aria-pressed={form.badge === b}
                     onClick={() => setForm((p) => ({ ...p, badge: b }))}
                     className={cn(
-                      'px-2.5 py-0.5 rounded-full text-[11px] font-bold border-[1.5px] transition-colors',
+                      'min-h-[32px] px-3 py-1 rounded-full text-[11px] font-bold border-[1.5px] transition-colors',
                       form.badge === b
                         ? 'border-primary bg-primary text-cream'
-                        : 'border-gray-300 bg-white text-gray-500 hover:border-primary',
+                        : 'border-espresso/20 bg-white text-espresso/70 hover:border-primary',
                     )}
                   >
                     {b}
@@ -399,7 +411,7 @@ export function AdminEditProductPage() {
                   <button
                     type="button"
                     onClick={() => setForm((p) => ({ ...p, badge: '' }))}
-                    className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border-[1.5px] border-red-300 bg-white text-red-600"
+                    className="min-h-[32px] px-3 py-1 rounded-full text-[11px] font-bold border-[1.5px] border-red-300 bg-white text-red-700"
                   >
                     Clear
                   </button>
@@ -409,30 +421,41 @@ export function AdminEditProductPage() {
 
             {/* Price / MRP / Stock / Category / Sort */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Price (₹)" error={fieldErrors.price}>
-                <Input name="price" value={form.price} onChange={handleChange} type="number" min="0" step="0.01" />
+              <Field label="Price (₹)" error={fieldErrors.price} htmlFor="ep-price">
+                <Input id="ep-price" name="price" value={form.price} onChange={handleChange} type="number" inputMode="decimal" min="0" step="0.01" />
               </Field>
               <Field
                 label="MRP (₹)"
+                htmlFor="ep-mrp"
                 error={fieldErrors.mrp}
                 hint={disc ? `${disc}% discount` : 'Shown struck-through when higher than price'}
               >
-                <Input name="mrp" value={form.mrp} onChange={handleChange} type="number" min="0" step="0.01" />
+                <Input id="ep-mrp" name="mrp" value={form.mrp} onChange={handleChange} type="number" inputMode="decimal" min="0" step="0.01" />
               </Field>
-              <Field label="Stock" error={fieldErrors.stock} hint="-1 = unlimited">
-                <Input name="stock" value={form.stock} onChange={handleChange} type="number" min="-1" step="1" />
-              </Field>
-              <Field label="Category">
-                <Select name="category_id" value={form.category_id} onChange={handleChange}>
+              <Field label="Category" htmlFor="ep-category">
+                <Select id="ep-category" name="category_id" value={form.category_id} onChange={handleChange}>
                   <option value="">No category</option>
                   {flatCats.map((c) => (
                     <option key={c.id} value={c.id}>{indentLabel(c.level, c.name)}</option>
                   ))}
                 </Select>
               </Field>
-              <Field label="Sort Order" error={fieldErrors.sort_order} hint="Lower = first">
-                <Input name="sort_order" value={form.sort_order} onChange={handleChange} type="number" step="1" />
+              <Field label="Sort Order" error={fieldErrors.sort_order} hint="Lower = first" htmlFor="ep-sort">
+                <Input id="ep-sort" name="sort_order" value={form.sort_order} onChange={handleChange} type="number" step="1" />
               </Field>
+            </div>
+
+            <div className="max-w-md">
+              <StockField
+                tracked={form.stock_tracked}
+                count={form.stock}
+                error={fieldErrors.stock}
+                disabled={saving}
+                onChange={({ tracked, count }) => {
+                  setFieldErrors((prev) => ({ ...prev, stock: undefined }));
+                  setForm((prev) => ({ ...prev, stock_tracked: tracked, stock: count }));
+                }}
+              />
             </div>
           </div>
         </Card>
@@ -450,14 +473,17 @@ export function AdminEditProductPage() {
       <div className="max-w-3xl space-y-5">
         <Card
           title="Images"
-          subtitle={`${imageCount}/${MAX_IMAGES} uploaded — drag to reorder; the first image is the primary image`}
+          subtitle={`${imageCount}/${MAX_IMAGES} uploaded. The first image is the primary image; use the arrows (or drag on a computer) to change the order.`}
         >
           {imageCount > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <ul className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5" aria-label="Product images">
               {existingImages.map((img, idx) => {
                 const busy = imageBusyId === img.id;
+                const isPrimary = idx === 0;
+                const iconBtn =
+                  'h-9 w-9 inline-flex items-center justify-center rounded-md border border-espresso/15 bg-white text-espresso/75 hover:border-primary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed';
                 return (
-                  <div
+                  <li
                     key={img.id}
                     draggable={!imageBusyId}
                     onDragStart={() => handleDragStart(idx)}
@@ -465,42 +491,75 @@ export function AdminEditProductPage() {
                     onDragEnd={handleDragEnd}
                     onDragOver={(e) => e.preventDefault()}
                     className={cn(
-                      'group relative aspect-square overflow-hidden rounded-lg border-2 cursor-grab transition-colors',
-                      dragOver === idx ? 'border-gold' : idx === 0 ? 'border-primary' : 'border-gray-200',
+                      'flex flex-col overflow-hidden rounded-lg border-2 bg-white transition-colors',
+                      dragOver === idx ? 'border-gold' : isPrimary ? 'border-primary' : 'border-espresso/10',
                       busy && 'opacity-60',
                     )}
                   >
-                    <img src={mediaUrl(img.image_path)} alt="" className="block h-full w-full object-cover" />
-                    {idx === 0 && (
-                      <span className="absolute top-1 left-1 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-cream">
-                        Primary
-                      </span>
-                    )}
-                    {/* Action overlay — visible on hover or keyboard focus */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-espresso/60 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      {idx !== 0 && (
+                    <div className="relative aspect-square cursor-grab bg-ivory">
+                      <img
+                        src={mediaUrl(img.image_path)}
+                        alt={`Image ${idx + 1}${isPrimary ? ' (primary)' : ''}`}
+                        className="block h-full w-full object-cover"
+                      />
+                      {isPrimary && (
+                        <span className="absolute top-1 left-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-cream">
+                          Primary
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5 border-t border-espresso/8 p-1.5">
+                      {isPrimary ? (
+                        <span className="min-h-[36px] inline-flex items-center justify-center text-[11px] font-semibold text-primary">
+                          Shown first on the store
+                        </span>
+                      ) : (
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={Boolean(imageBusyId)}
                           onClick={() => handleSetPrimary(img.id)}
-                          className="rounded bg-gold px-2 py-0.5 text-[10px] font-bold text-espresso disabled:opacity-60"
+                          className="min-h-[36px] inline-flex items-center justify-center gap-1 rounded-md bg-gold/20 px-2 text-[11px] font-bold text-gold-800 hover:bg-gold/30 disabled:opacity-50"
                         >
-                          Set Primary
+                          <Star className="h-3.5 w-3.5" aria-hidden="true" /> Make primary
                         </button>
                       )}
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => handleDeleteImage(img, idx)}
-                        className="rounded bg-red-800 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-60"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex items-center justify-between gap-1">
+                        <button
+                          type="button"
+                          className={iconBtn}
+                          disabled={Boolean(imageBusyId) || idx === 0}
+                          onClick={() => moveImage(idx, idx - 1)}
+                          aria-label={`Move image ${idx + 1} earlier`}
+                          title="Move earlier"
+                        >
+                          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className={iconBtn}
+                          disabled={Boolean(imageBusyId) || idx === imageCount - 1}
+                          onClick={() => moveImage(idx, idx + 1)}
+                          aria-label={`Move image ${idx + 1} later`}
+                          title="Move later"
+                        >
+                          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(iconBtn, 'text-red-700 hover:border-red-400 hover:text-red-800')}
+                          disabled={Boolean(imageBusyId)}
+                          onClick={() => handleDeleteImage(img, idx)}
+                          aria-label={`Delete image ${idx + 1}`}
+                          title="Delete image"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
 
           {imageCount < MAX_IMAGES ? (
@@ -520,7 +579,7 @@ export function AdminEditProductPage() {
               )}
             </div>
           ) : (
-            <p className="text-xs text-gray-500">Maximum {MAX_IMAGES} images reached. Delete one to upload more.</p>
+            <p className="text-xs text-espresso/60">Maximum {MAX_IMAGES} images reached. Delete one to upload more.</p>
           )}
         </Card>
 
@@ -528,7 +587,7 @@ export function AdminEditProductPage() {
         <Card title="Video (optional)">
           {product.video_path && (
             <div className="mb-4">
-              <p className="text-xs text-gray-500 mb-2">Current video:</p>
+              <p className="text-xs text-espresso/60 mb-2">Current video:</p>
               <video
                 key={product.video_path}
                 src={mediaUrl(product.video_path)}
@@ -549,7 +608,7 @@ export function AdminEditProductPage() {
               <Button onClick={handleUploadVideo} disabled={uploadingVideo}>
                 {uploadingVideo ? 'Uploading…' : 'Upload Video'}
               </Button>
-              <span className="text-[11px] text-gray-500">{videoFile.name} · {formatBytes(videoFile.size)}</span>
+              <span className="text-[11px] text-espresso/60">{videoFile.name} · {formatBytes(videoFile.size)}</span>
             </div>
           )}
         </Card>
@@ -558,8 +617,8 @@ export function AdminEditProductPage() {
         <Card title="Danger Zone">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-gray-800">Delete this product</p>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-sm font-semibold text-espresso">Delete this product</p>
+              <p className="text-xs text-espresso/60 mt-0.5">
                 Permanently removes the product, all its images, and reviews. Products that have orders
                 can’t be deleted — unpublish them instead.
               </p>

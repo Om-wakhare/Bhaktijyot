@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { getErrorMessage } from '../../services/apiClient';
 import {
   Alert, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState, Page, Pill, Select, Textarea,
@@ -6,8 +6,8 @@ import {
 import { useToast } from '../../components/admin/Toast';
 import { useConfirm } from '../../components/admin/ConfirmDialog';
 import {
-  SLUG_HINT, SLUG_RE, WORLD_HINT, WORLD_OPTIONS, flattenTree, indentLabel, slugify, subtreeIds,
-  useLatestRequest, worldLabel,
+  SLUG_HINT, SLUG_RE, WORLD_HINT, WORLD_OPTIONS, flattenTree, indentLabel, scrollToElement, slugConflictMessage,
+  slugify, subtreeIds, useLatestRequest, worldLabel,
 } from '../../components/admin/adminUtils';
 
 const EMPTY = { name: '', slug: '', description: '', parent_id: '', world: '' };
@@ -28,6 +28,15 @@ export function AdminManageCategoriesPage() {
   const [fieldErrors, setFieldErrors] = useState({});
 
   const flatCategories = useMemo(() => flattenTree(categories), [categories]);
+
+  // On phones the edit form sits below the (long) list — bring it into view when editing starts
+  const editCardRef = useRef(null);
+  const nameInputRef = useRef(null);
+  useEffect(() => {
+    if (!editingId) return;
+    scrollToElement(editCardRef.current);
+    nameInputRef.current?.focus({ preventScroll: true });
+  }, [editingId]);
 
   const load = useCallback(async () => {
     const isCurrent = beginRequest();
@@ -103,7 +112,7 @@ export function AdminManageCategoriesPage() {
       await load();
     } catch (err) {
       // 409 duplicate slug, 400 cycle / missing parent, 422 slug format
-      setFormError(getErrorMessage(err, 'Could not update the category.'));
+      setFormError(slugConflictMessage(err, 'category', slug, 'Could not update the category.'));
     } finally {
       setSaving(false);
     }
@@ -129,8 +138,8 @@ export function AdminManageCategoriesPage() {
       toast.success(`Category "${cat.name}" deleted`);
       await load();
     } catch (err) {
-      // 409 explains what still uses the category
-      toast.error(getErrorMessage(err, 'Could not delete the category.'));
+      // 409: the server explains (in plain words) what still uses the category
+      toast.error(getErrorMessage(err, 'Could not delete the category.'), { duration: 10000 });
     } finally {
       setDeletingId(null);
     }
@@ -140,28 +149,29 @@ export function AdminManageCategoriesPage() {
     <div
       key={cat.id}
       className={`flex items-center justify-between gap-2 pr-4 py-2.5 transition-colors ${
-        editingId === cat.id ? 'bg-primary/5' : 'hover:bg-gray-50'
+        editingId === cat.id ? 'bg-primary/5' : 'hover:bg-ivory'
       }`}
       style={{ paddingLeft: 16 + cat.level * 20 }}
     >
       <div className="min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-gray-900 truncate">{cat.name}</span>
+          <span className="text-sm font-semibold text-espresso truncate">{cat.name}</span>
           {cat.world && <Pill className="bg-gold/15 text-gold-700">{worldLabel(cat.world)}</Pill>}
         </div>
-        <div className="text-[11px] text-gray-400 truncate">
+        <div className="text-[11px] text-espresso/60 truncate">
           /{cat.slug}
           {cat.description ? ` · ${cat.description}` : ''}
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        <Button variant="secondary" size="sm" onClick={() => startEdit(cat)}>
+        <Button variant="secondary" size="sm" onClick={() => startEdit(cat)} aria-label={`Edit ${cat.name}`}>
           Edit
         </Button>
         <Button
           variant="danger" size="sm"
           onClick={() => handleDelete(cat)}
           disabled={deletingId === cat.id}
+          aria-label={`Delete ${cat.name}`}
         >
           {deletingId === cat.id ? '…' : 'Delete'}
         </Button>
@@ -187,26 +197,28 @@ export function AdminManageCategoriesPage() {
           ) : categories.length === 0 ? (
             <EmptyState>No categories yet. Click “Add Category” to create one.</EmptyState>
           ) : (
-            <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-[520px] overflow-auto">
+            <div className="border border-espresso/10 rounded-xl divide-y divide-espresso/8 max-h-[520px] overflow-auto">
               {flatCategories.map(renderCategory)}
             </div>
           )}
         </Card>
 
         {editingId && (
+          <div ref={editCardRef} className="scroll-mt-20">
           <Card title="Edit Category" subtitle={editingCat ? `Editing “${editingCat.name}”` : 'Update the selected category.'}>
             <form onSubmit={handleUpdate} className="space-y-3" noValidate>
-              <Field label="Name *" error={fieldErrors.name}>
-                <Input name="name" value={form.name} onChange={handleChange} required maxLength={255} />
+              <Field label="Name *" error={fieldErrors.name} htmlFor="ec-name">
+                <Input id="ec-name" ref={nameInputRef} name="name" value={form.name} onChange={handleChange} required maxLength={255} />
               </Field>
 
               <Field
                 label="Slug *"
+                htmlFor="ec-slug"
                 error={fieldErrors.slug}
                 hint={`${SLUG_HINT}. Changing it changes the category's link.`}
               >
                 <div className="flex gap-2">
-                  <Input name="slug" value={form.slug} onChange={handleChange} required className="flex-1" />
+                  <Input id="ec-slug" name="slug" value={form.slug} onChange={handleChange} required className="flex-1" />
                   <Button
                     variant="outline" size="sm"
                     className="shrink-0 whitespace-nowrap"
@@ -221,12 +233,12 @@ export function AdminManageCategoriesPage() {
                 </div>
               </Field>
 
-              <Field label="Description (optional)">
-                <Textarea name="description" value={form.description} onChange={handleChange} rows={3} maxLength={1000} />
+              <Field label="Description (optional)" htmlFor="ec-description">
+                <Textarea id="ec-description" name="description" value={form.description} onChange={handleChange} rows={3} maxLength={1000} />
               </Field>
 
-              <Field label="Parent category" hint="A category can't be moved inside itself or its own subcategories.">
-                <Select name="parent_id" value={form.parent_id} onChange={handleChange}>
+              <Field label="Parent category" htmlFor="ec-parent" hint="A category can't be moved inside itself or its own subcategories, so those are not listed.">
+                <Select id="ec-parent" name="parent_id" value={form.parent_id} onChange={handleChange}>
                   <option value="">No parent (top level)</option>
                   {flatCategories
                     .filter((c) => !blockedParentIds.has(c.id))
@@ -238,9 +250,10 @@ export function AdminManageCategoriesPage() {
 
               <Field
                 label="World"
+                htmlFor="ec-world"
                 hint={parentForHint ? `${WORLD_HINT} Leave as None to inherit from “${parentForHint.name}”.` : WORLD_HINT}
               >
-                <Select name="world" value={form.world} onChange={handleChange}>
+                <Select id="ec-world" name="world" value={form.world} onChange={handleChange}>
                   {WORLD_OPTIONS.map((o) => (
                     <option key={o.value || 'none'} value={o.value}>{o.label}</option>
                   ))}
@@ -259,6 +272,7 @@ export function AdminManageCategoriesPage() {
               </div>
             </form>
           </Card>
+          </div>
         )}
       </div>
     </Page>

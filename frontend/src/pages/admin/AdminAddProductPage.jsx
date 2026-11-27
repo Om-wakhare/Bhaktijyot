@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { ImageUploader } from '../../components/admin/ImageUploader';
+import { StockField } from '../../components/admin/StockField';
 import {
   Alert, Button, Card, Field, FileInput, Input, Page, Select, Textarea, Toggle,
 } from '../../components/admin/ui';
 import { useToast } from '../../components/admin/Toast';
 import {
-  SLUG_HINT, flattenTree, formatBytes, indentLabel, slugify, useLatestRequest,
+  SLUG_HINT, flattenTree, formatBytes, indentLabel, slugConflictMessage, slugify, useLatestRequest,
 } from '../../components/admin/adminUtils';
 import {
   EMPTY_PRODUCT_FORM, VIDEO_ACCEPT, discountPct, generateSlug, productPayload, validateProductForm, videoFileError,
@@ -131,7 +132,7 @@ export function AdminAddProductPage() {
       const res = await api.post('/products', productPayload(form));
       created = res.data;
     } catch (err) {
-      setError(getErrorMessage(err, 'Could not create the product.'));
+      setError(slugConflictMessage(err, 'product', form.slug.trim(), 'Could not create the product.'));
       setSaving(false);
       return;
     }
@@ -169,7 +170,7 @@ export function AdminAddProductPage() {
     <Page title="Add Product" description="Create a new product with pricing and media.">
       <Card title="Product Details" subtitle="Fill in product information and optionally attach images/video.">
         <form onSubmit={handleSubmit} className="space-y-4 max-w-3xl" noValidate>
-          <div className="pb-4 border-b border-gray-100">
+          <div className="pb-4 border-b border-espresso/8">
             <Toggle
               checked={form.is_active}
               onChange={(v) => setForm((prev) => ({ ...prev, is_active: v }))}
@@ -202,16 +203,17 @@ export function AdminAddProductPage() {
             </Field>
           </div>
 
-          <Field label="Description (optional)">
-            <Textarea name="description" value={form.description} onChange={handleChange} rows={4} />
+          <Field label="Description (optional)" htmlFor="p-description">
+            <Textarea id="p-description" name="description" value={form.description} onChange={handleChange} rows={4} />
           </Field>
 
-          <Field label="Benefits (optional)">
-            <Textarea name="benefits" value={form.benefits} onChange={handleChange} rows={3} />
+          <Field label="Benefits (optional)" htmlFor="p-benefits">
+            <Textarea id="p-benefits" name="benefits" value={form.benefits} onChange={handleChange} rows={3} />
           </Field>
 
-          <Field label="Product Badge (top-left label on card — e.g. #1 BEST-SELLER, NEW ARRIVAL, HOT)">
+          <Field label="Product Badge (top-left label on card — e.g. #1 BEST-SELLER, NEW ARRIVAL, HOT)" htmlFor="p-badge">
             <Input
+              id="p-badge"
               name="badge"
               value={form.badge}
               onChange={handleChange}
@@ -221,21 +223,19 @@ export function AdminAddProductPage() {
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Price (₹, optional)" error={fieldErrors.price}>
-              <Input name="price" value={form.price} onChange={handleChange} placeholder="₹" type="number" min="0" step="0.01" />
+            <Field label="Price (₹, optional)" error={fieldErrors.price} htmlFor="p-price">
+              <Input id="p-price" name="price" value={form.price} onChange={handleChange} placeholder="₹" type="number" inputMode="decimal" min="0" step="0.01" />
             </Field>
             <Field
               label="MRP (₹, optional)"
+              htmlFor="p-mrp"
               error={fieldErrors.mrp}
               hint={disc ? `${disc}% discount shown on the store` : 'Shown struck-through when higher than price'}
             >
-              <Input name="mrp" value={form.mrp} onChange={handleChange} placeholder="₹" type="number" min="0" step="0.01" />
+              <Input id="p-mrp" name="mrp" value={form.mrp} onChange={handleChange} placeholder="₹" type="number" inputMode="decimal" min="0" step="0.01" />
             </Field>
-            <Field label="Stock" error={fieldErrors.stock} hint="-1 = unlimited">
-              <Input name="stock" value={form.stock} onChange={handleChange} placeholder="-1" type="number" min="-1" step="1" />
-            </Field>
-            <Field label="Category (optional)" error={catError || undefined}>
-              <Select name="category_id" value={form.category_id} onChange={handleChange}>
+            <Field label="Category (optional)" error={catError || undefined} htmlFor="p-category">
+              <Select id="p-category" name="category_id" value={form.category_id} onChange={handleChange}>
                 <option value="">No category</option>
                 {flatCats.map((c) => (
                   <option key={c.id} value={c.id}>{indentLabel(c.level, c.name)}</option>
@@ -247,13 +247,26 @@ export function AdminAddProductPage() {
                 </button>
               )}
             </Field>
-            <Field label="Sort Order" error={fieldErrors.sort_order} hint="Lower numbers are listed first">
-              <Input name="sort_order" value={form.sort_order} onChange={handleChange} type="number" step="1" />
+            <Field label="Sort Order" error={fieldErrors.sort_order} hint="Lower numbers are listed first" htmlFor="p-sort">
+              <Input id="p-sort" name="sort_order" value={form.sort_order} onChange={handleChange} type="number" step="1" />
             </Field>
           </div>
 
-          <div className="pt-4 border-t border-gray-100">
-            <div className="text-sm font-semibold text-gray-900 mb-3">Media (optional)</div>
+          <div className="max-w-md">
+            <StockField
+              tracked={form.stock_tracked}
+              count={form.stock}
+              error={fieldErrors.stock}
+              disabled={saving}
+              onChange={({ tracked, count }) => {
+                setFieldErrors((prev) => ({ ...prev, stock: undefined }));
+                setForm((prev) => ({ ...prev, stock_tracked: tracked, stock: count }));
+              }}
+            />
+          </div>
+
+          <div className="pt-4 border-t border-espresso/8">
+            <div className="text-sm font-semibold text-espresso mb-3">Media (optional)</div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Images (up to 4 — the first is the primary image)">
                 <ImageUploader existingCount={0} onFilesChange={setImageFiles} disabled={saving} />
@@ -261,16 +274,16 @@ export function AdminAddProductPage() {
               <Field label="Video" error={videoError || undefined} hint="MP4, WebM or MOV · max 50 MB">
                 <FileInput key={videoInputKey} accept={VIDEO_ACCEPT} onChange={onVideoChange} disabled={saving} />
                 {videoFile && (
-                  <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-600">
+                  <div className="mt-2 flex items-center gap-2 text-[11px] text-espresso/70">
                     <span className="truncate">{videoFile.name} · {formatBytes(videoFile.size)}</span>
-                    <button type="button" onClick={clearVideo} className="font-semibold text-red-600 hover:underline">
+                    <button type="button" onClick={clearVideo} className="min-h-[32px] px-1 font-semibold text-red-700 hover:underline">
                       Remove
                     </button>
                   </div>
                 )}
               </Field>
             </div>
-            <div className="mt-2 text-[11px] text-gray-500">
+            <div className="mt-2 text-[11px] text-espresso/60">
               Images and video are uploaded right after the product is created.
             </div>
           </div>

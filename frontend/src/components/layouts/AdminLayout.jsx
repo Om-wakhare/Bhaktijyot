@@ -3,18 +3,20 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../services/apiClient';
 import {
   LayoutDashboard, ShoppingBag, Package, Tag, FileCheck, Settings, CalendarCheck,
-  LogOut, Sparkles, Menu, X, ChevronRight, Plus, List, RefreshCw, MessageSquare,
+  LogOut, Sparkles, Menu, X, ChevronRight, Plus, List, RefreshCw, MessageSquare, ExternalLink,
 } from 'lucide-react';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useAuth } from '../../services/auth';
 import { ToastProvider } from '../admin/Toast';
 import { ConfirmProvider } from '../admin/ConfirmDialog';
 import { ADMIN_COUNTS_EVENT } from '../admin/adminUtils';
+import { cn } from '../admin/ui';
 
 const NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
-  { href: '/admin/consultations', label: 'Consultations', icon: CalendarCheck, badgeKey: 'consultations' },
-  { href: '/admin/reviews', label: 'Reviews', icon: MessageSquare, badgeKey: 'reviews' },
+  { href: '/admin/consultations', label: 'Consultations', icon: CalendarCheck, badgeKey: 'consultations', badgeLabel: 'new' },
+  { href: '/admin/reviews', label: 'Reviews', icon: MessageSquare, badgeKey: 'reviews', badgeLabel: 'awaiting approval' },
   {
     label: 'Products', icon: Package,
     children: [
@@ -44,38 +46,41 @@ function pathMatches(pathname, href) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Among sibling links, the longest matching href wins (so /products/add beats /products). */
+/**
+ * Among sibling links, the longest matching href wins, so /admin/products/add highlights
+ * "Add Product" while /admin/products/12/edit highlights "Manage".
+ */
 function activeChildHref(pathname, children) {
   return children
     .filter((c) => pathMatches(pathname, c.href))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }
 
-function NavBadge({ count }) {
+function NavBadge({ count, label }) {
   if (!count || count <= 0) return null;
   return (
-    <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-500 text-white">
+    <span className="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[10px] font-bold bg-gold text-espresso">
       {count > 99 ? '99+' : count}
+      <span className="sr-only"> {label}</span>
     </span>
   );
 }
 
-function SidebarLink({ href, label, icon: Icon, exact, badge }) {
+const LINK_BASE = 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors';
+const LINK_IDLE = 'text-cream/75 hover:text-white hover:bg-white/8';
+
+function SidebarLink({ href, label, icon: Icon, exact, badge, badgeLabel }) {
   const { pathname } = useLocation();
   const active = exact ? pathname === href || pathname === `${href}/` : pathMatches(pathname, href);
   return (
     <Link
       to={href}
       aria-current={active ? 'page' : undefined}
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-        active
-          ? 'bg-primary text-white shadow-sm'
-          : 'text-stone-400 hover:text-white hover:bg-white/8'
-      }`}
+      className={cn(LINK_BASE, active ? 'bg-primary text-white shadow-sm' : LINK_IDLE)}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="flex-1">{label}</span>
-      <NavBadge count={badge} />
+      <NavBadge count={badge} label={badgeLabel} />
     </Link>
   );
 }
@@ -91,6 +96,7 @@ function NavGroup({ item }) {
   }, [isActive]);
 
   const Icon = item.icon;
+  const groupId = `nav-group-${item.label.toLowerCase()}`;
 
   return (
     <div className="space-y-0.5">
@@ -98,18 +104,20 @@ function NavGroup({ item }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-          isActive ? 'text-white' : 'text-stone-400 hover:text-white hover:bg-white/8'
-        }`}
+        aria-controls={groupId}
+        className={cn(
+          'w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+          isActive ? 'text-white' : LINK_IDLE,
+        )}
       >
         <span className="flex items-center gap-3">
-          <Icon className="h-4 w-4 shrink-0" />
+          <Icon className={cn('h-4 w-4 shrink-0', isActive && 'text-gold')} aria-hidden="true" />
           {item.label}
         </span>
-        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-90' : ''}`} />
+        <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} aria-hidden="true" />
       </button>
       {open && (
-        <div className="pl-9 space-y-0.5">
+        <div id={groupId} className="pl-9 space-y-0.5">
           {item.children.map((child) => {
             const ChildIcon = child.icon;
             const active = child.href === activeHref;
@@ -118,13 +126,12 @@ function NavGroup({ item }) {
                 key={child.href}
                 to={child.href}
                 aria-current={active ? 'page' : undefined}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                  active
-                    ? 'bg-primary text-white'
-                    : 'text-stone-500 hover:text-stone-200 hover:bg-white/5'
-                }`}
+                className={cn(
+                  'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors',
+                  active ? 'bg-primary text-white' : 'text-cream/70 hover:text-white hover:bg-white/5',
+                )}
               >
-                <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                <ChildIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 {child.label}
               </Link>
             );
@@ -150,11 +157,11 @@ function Sidebar({ onClose, variant, counts }) {
       <div className="px-4 py-5 border-b border-white/8 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-            <Sparkles className="h-4 w-4 text-white" />
+            <Sparkles className="h-4 w-4 text-gold-light" aria-hidden="true" />
           </div>
           <div>
-            <div className="text-sm font-bold text-white leading-tight">Bhaktijyot</div>
-            <div className="text-[10px] text-stone-500 font-medium uppercase tracking-wider">Admin Panel</div>
+            <div className="font-display text-sm font-bold text-white leading-tight">Bhaktijyot</div>
+            <div className="text-[10px] text-cream/65 font-medium uppercase tracking-wider">Admin Panel</div>
           </div>
         </div>
         {variant === 'mobile' && onClose && (
@@ -162,15 +169,15 @@ function Sidebar({ onClose, variant, counts }) {
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="text-stone-500 hover:text-white transition-colors"
+            className="h-9 w-9 -mr-2 flex items-center justify-center rounded-lg text-cream/70 hover:text-white hover:bg-white/8 transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav aria-label="Admin" className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {NAV.map((item) =>
           item.children ? (
             <NavGroup key={item.label} item={item} />
@@ -182,6 +189,7 @@ function Sidebar({ onClose, variant, counts }) {
               icon={item.icon}
               exact={item.exact}
               badge={item.badgeKey ? counts[item.badgeKey] : undefined}
+              badgeLabel={item.badgeLabel}
             />
           ),
         )}
@@ -189,21 +197,22 @@ function Sidebar({ onClose, variant, counts }) {
 
       {/* Footer */}
       <div className="p-3 border-t border-white/8 space-y-1">
-        <Link
-          to="/"
+        <a
+          href="/"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-stone-400 hover:text-white hover:bg-white/8 transition-all"
+          className={cn(LINK_BASE, LINK_IDLE)}
         >
-          <ChevronRight className="h-4 w-4" />
+          <ExternalLink className="h-4 w-4" aria-hidden="true" />
           View Store
-        </Link>
+          <span className="sr-only">(opens in a new tab)</span>
+        </a>
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-stone-400 hover:text-red-400 hover:bg-red-400/10 transition-all"
+          className={cn(LINK_BASE, 'w-full text-cream/75 hover:text-red-300 hover:bg-red-400/10')}
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut className="h-4 w-4" aria-hidden="true" />
           Logout
         </button>
       </div>
@@ -211,7 +220,10 @@ function Sidebar({ onClose, variant, counts }) {
   );
 }
 
-/** Sidebar badge counts; refreshed on mount and whenever a page dispatches ADMIN_COUNTS_EVENT. */
+/**
+ * Sidebar badge counts; refreshed on mount, whenever a page dispatches ADMIN_COUNTS_EVENT,
+ * and when the owner comes back to the tab.
+ */
 function useAdminCounts() {
   const [counts, setCounts] = useState({ reviews: 0, consultations: 0 });
 
@@ -226,8 +238,13 @@ function useAdminCounts() {
 
   useEffect(() => {
     refresh();
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener(ADMIN_COUNTS_EVENT, refresh);
-    return () => window.removeEventListener(ADMIN_COUNTS_EVENT, refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener(ADMIN_COUNTS_EVENT, refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [refresh]);
 
   return counts;
@@ -237,47 +254,52 @@ export function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const counts = useAdminCounts();
+  const attention = (counts.reviews || 0) + (counts.consultations || 0);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname, location.search]);
 
   return (
     <ToastProvider>
       <ConfirmProvider>
-        <div className="min-h-screen flex bg-stone-100">
+        <div className="min-h-screen flex bg-ivory">
           {/* Desktop sidebar */}
           <div className="hidden lg:flex flex-col w-60 shrink-0 sticky top-0 h-screen">
             <Sidebar variant="desktop" counts={counts} />
           </div>
 
-          {/* Mobile overlay */}
-          {mobileOpen && (
-            <div className="lg:hidden fixed inset-0 z-50 flex">
-              <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-              <div className="relative w-60 h-full">
-                <Sidebar variant="mobile" counts={counts} onClose={() => setMobileOpen(false)} />
-              </div>
-            </div>
-          )}
+          {/* Mobile menu (Radix Sheet: focus trap, Escape, scroll lock) */}
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetContent
+              side="left"
+              hideClose
+              className="w-60 max-w-[85vw] border-0 bg-espresso p-0 sm:max-w-[15rem] lg:hidden"
+            >
+              <SheetTitle className="sr-only">Admin menu</SheetTitle>
+              <SheetDescription className="sr-only">Navigate between admin sections.</SheetDescription>
+              <Sidebar variant="mobile" counts={counts} onClose={() => setMobileOpen(false)} />
+            </SheetContent>
+          </Sheet>
 
           {/* Main content */}
           <main className="flex-1 min-w-0">
             {/* Mobile top bar */}
-            <div className="lg:hidden bg-espresso border-b border-white/8 flex items-center justify-between px-4 h-14">
+            <div className="lg:hidden sticky top-0 z-40 bg-espresso border-b border-white/8 flex items-center justify-between px-4 h-14">
               <div className="flex items-center gap-2.5">
                 <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-                  <Sparkles className="h-3.5 w-3.5 text-white" />
+                  <Sparkles className="h-3.5 w-3.5 text-gold-light" aria-hidden="true" />
                 </div>
-                <span className="text-sm font-bold text-white">Bhaktijyot Admin</span>
+                <span className="font-display text-sm font-bold text-white">Bhaktijyot Admin</span>
               </div>
               <button
                 type="button"
                 onClick={() => setMobileOpen(true)}
-                aria-label="Open menu"
-                className="relative h-9 w-9 flex items-center justify-center text-stone-400 hover:text-white transition-colors"
+                aria-label={attention > 0 ? `Open menu (${attention} item${attention === 1 ? '' : 's'} need attention)` : 'Open menu'}
+                aria-expanded={mobileOpen}
+                className="relative h-10 w-10 flex items-center justify-center rounded-lg text-cream/80 hover:text-white hover:bg-white/8 transition-colors"
               >
-                <Menu className="h-5 w-5" />
-                {(counts.reviews > 0 || counts.consultations > 0) && (
-                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                <Menu className="h-5 w-5" aria-hidden="true" />
+                {attention > 0 && (
+                  <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-gold ring-2 ring-espresso" aria-hidden="true" />
                 )}
               </button>
             </div>

@@ -109,18 +109,18 @@ export function ImageUploader({ existingCount = 0, onFilesChange, disabled = fal
         } ${zoneDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-gold'}`}
       >
         <svg
-          width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C9A84C"
+          width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-          className="mx-auto mb-2" aria-hidden="true"
+          className="mx-auto mb-2 text-gold-600" aria-hidden="true"
         >
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         </svg>
         <p className="text-[13px] font-semibold text-espresso mb-1">
-          {slotsLeft > 0 ? 'Drop images here or click to browse' : 'Maximum images reached'}
+          {slotsLeft > 0 ? 'Tap to choose images (or drag them here)' : 'Maximum images reached'}
         </p>
-        <p className="text-[11px] text-gray-500">
+        <p className="text-[11px] text-espresso/60">
           JPEG · PNG · WebP · Max 5 MB each · {slotsLeft > 0 ? `Up to ${slotsLeft} more` : 'Remove one to add another'}
         </p>
       </div>
@@ -152,7 +152,7 @@ export function ImageUploader({ existingCount = 0, onFilesChange, disabled = fal
                 <img src={entry.preview} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
               ) : (
                 <div className="h-10 w-10 shrink-0 rounded bg-red-100 flex items-center justify-center" aria-hidden="true">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" strokeWidth="2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-700">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -164,7 +164,7 @@ export function ImageUploader({ existingCount = 0, onFilesChange, disabled = fal
                 <p className={`truncate text-xs font-semibold ${entry.error ? 'text-red-800' : 'text-espresso'}`}>
                   {entry.file.name}
                 </p>
-                <p className={`text-[11px] ${entry.error ? 'text-red-600' : 'text-gray-500'}`}>
+                <p className={`text-[11px] ${entry.error ? 'text-red-700' : 'text-espresso/60'}`}>
                   {entry.error || formatBytes(entry.file.size)}
                 </p>
               </div>
@@ -174,9 +174,9 @@ export function ImageUploader({ existingCount = 0, onFilesChange, disabled = fal
                 onClick={() => removeEntry(entry.id)}
                 aria-label={`Remove ${entry.file.name}`}
                 disabled={disabled}
-                className="h-6 w-6 shrink-0 rounded-full bg-espresso/8 flex items-center justify-center hover:bg-espresso/15 disabled:opacity-50"
+                className="h-9 w-9 shrink-0 rounded-full bg-espresso/8 flex items-center justify-center hover:bg-espresso/15 disabled:opacity-50"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B5040" strokeWidth="2.5" aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-espresso/70" aria-hidden="true">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>

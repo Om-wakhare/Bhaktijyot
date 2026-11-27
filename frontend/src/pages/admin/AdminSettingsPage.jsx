@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { Alert, Button, Card, ErrorState, Field, Input, LoadingState, Page, Toggle } from '../../components/admin/ui';
-import { useToast } from '../../components/admin/Toast';
 import { phoneDigits, useLatestRequest } from '../../components/admin/adminUtils';
 
 const DEFAULT_WHATSAPP = '918484913170';
@@ -24,21 +23,33 @@ function pick(obj, keys) {
   return Object.fromEntries(keys.map((k) => [k, obj[k]]));
 }
 
-/** Digits only (spaces, +, -, brackets and dots stripped). */
-function normalizeWhatsApp(value) {
-  return String(value ?? '').replace(/[\s+\-().]/g, '');
+/**
+ * Indian mobile → the stored format "91XXXXXXXXXX" (country code, no + or spaces).
+ * Accepts 10 digits, or +91 / 91 / 0 in front, with any spaces or dashes — the same rule
+ * the backend uses for customer phone numbers. Returns null when it isn't a valid mobile.
+ */
+function toWhatsAppNumber(value) {
+  let d = phoneDigits(value);
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return /^[6-9]\d{9}$/.test(d) ? `91${d}` : null;
 }
 
 function whatsAppError(value) {
-  const v = normalizeWhatsApp(value);
-  if (!v) return 'Enter the WhatsApp number.';
-  if (!/^\d+$/.test(v)) return 'Use digits only (spaces and + are removed automatically).';
-  if (v.length < 10 || v.length > 15) return 'Enter 10–15 digits including the country code, e.g. 918484913170.';
+  if (!String(value ?? '').trim()) return 'Enter the WhatsApp number.';
+  if (!toWhatsAppNumber(value)) {
+    return 'Enter a 10-digit Indian mobile number (it starts with 6, 7, 8 or 9), for example 84849 13170.';
+  }
   return '';
 }
 
+/** "918484913170" → "+91 84849 13170" for display. */
+function prettyWhatsApp(stored) {
+  const n = toWhatsAppNumber(stored);
+  return n ? `+91 ${n.slice(2, 7)} ${n.slice(7)}` : stored;
+}
+
 export function AdminSettingsPage() {
-  const toast = useToast();
   const beginRequest = useLatestRequest();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -51,11 +62,10 @@ export function AdminSettingsPage() {
   const [annMsg, setAnnMsg] = useState(null);
   const [annReloading, setAnnReloading] = useState(false);
 
-  // Instagram token
+  // Instagram token refresh. The token itself is never kept in state or shown.
   const [igLoading, setIgLoading] = useState(false);
   const [igError, setIgError] = useState('');
-  const [igResult, setIgResult] = useState(null);
-  const tokenInputRef = useRef(null);
+  const [igResult, setIgResult] = useState(null); // { expiresInSeconds }
 
   const load = useCallback(async () => {
     const isCurrent = beginRequest();
@@ -103,14 +113,14 @@ export function AdminSettingsPage() {
       setWaMsg({ tone: 'error', text: err });
       return;
     }
-    const number = normalizeWhatsApp(form.whatsapp_number);
+    const number = toWhatsAppNumber(form.whatsapp_number);
     setWaSaving(true);
     setWaMsg(null);
     try {
       const res = await api.put('/site-config', { whatsapp_number: number });
       const saved = fromConfig(res.data);
       setForm((prev) => ({ ...prev, ...pick(saved, WHATSAPP_FIELDS) }));
-      setWaMsg({ tone: 'success', text: 'WhatsApp number saved.' });
+      setWaMsg({ tone: 'success', text: `WhatsApp number saved: ${prettyWhatsApp(saved.whatsapp_number)}.` });
     } catch (error) {
       setWaMsg({ tone: 'error', text: getErrorMessage(error, 'Failed to save the WhatsApp number.') });
     } finally {
@@ -128,11 +138,16 @@ export function AdminSettingsPage() {
     setAnnSaving(true);
     setAnnMsg(null);
     try {
+      const link = form.announcement_cta_link.trim();
+      if (link && !link.startsWith('/') && !/^https?:\/\//i.test(link)) {
+        setAnnMsg({ tone: 'error', text: 'The button link must be a page on this site (starting with /, e.g. /products) or a full web address starting with https://.' });
+        return;
+      }
       const res = await api.put('/site-config', {
         announcement_enabled: form.announcement_enabled,
         announcement_message: form.announcement_message.trim(),
         announcement_cta_text: form.announcement_cta_text.trim(),
-        announcement_cta_link: form.announcement_cta_link.trim(),
+        announcement_cta_link: link,
       });
       const saved = fromConfig(res.data);
       setForm((prev) => ({ ...prev, ...pick(saved, ANNOUNCEMENT_FIELDS) }));
@@ -151,48 +166,35 @@ export function AdminSettingsPage() {
     setIgResult(null);
     try {
       const res = await api.post('/instagram/refresh-token');
+      // Keep only the expiry; the token value is never stored or displayed here.
       if (!res.data?.new_token) {
-        setIgError('Instagram did not return a new token. Please try again later.');
+        setIgError('Instagram did not confirm the refresh. Please try again later.');
       } else {
-        setIgResult(res.data);
+        setIgResult({ expiresInSeconds: Number(res.data.expires_in_seconds) || null });
       }
     } catch (err) {
-      // 503 = not configured, 502 = Instagram refused / unreachable
-      setIgError(getErrorMessage(err, 'Could not refresh the Instagram token.'));
+      // 503 = not set up on the server, 502 = Instagram refused / unreachable
+      const status = err?.response?.status;
+      if (status === 503) {
+        setIgError('Instagram is not connected on the server yet, so there is nothing to refresh. Ask your developer to set it up.');
+      } else if (status === 502) {
+        setIgError(`${getErrorMessage(err)} If the reels have stopped showing, ask your developer to reconnect Instagram.`);
+      } else {
+        setIgError(getErrorMessage(err, 'Could not refresh the Instagram connection.'));
+      }
     } finally {
       setIgLoading(false);
     }
   };
 
-  const copyToken = async () => {
-    const token = igResult?.new_token;
-    if (!token) return;
-    try {
-      await navigator.clipboard.writeText(token);
-      toast.success('Token copied to clipboard');
-    } catch {
-      // Clipboard API unavailable (e.g. non-HTTPS) — select the text so it can be copied manually
-      const el = tokenInputRef.current;
-      if (el) {
-        el.focus();
-        el.select();
-        let ok = false;
-        try { ok = document.execCommand('copy'); } catch { ok = false; }
-        if (ok) toast.success('Token copied to clipboard');
-        else toast.info('Press Ctrl+C (or ⌘C) to copy the selected token');
-      }
-    }
-  };
-
-  const igDays = igResult?.expires_in_seconds ? Math.round(igResult.expires_in_seconds / 86400) : null;
-  const igExpiry = igResult?.expires_in_seconds
-    ? new Date(Date.now() + igResult.expires_in_seconds * 1000).toLocaleDateString('en-IN', {
+  const igDays = igResult?.expiresInSeconds ? Math.round(igResult.expiresInSeconds / 86400) : null;
+  const igExpiry = igResult?.expiresInSeconds
+    ? new Date(Date.now() + igResult.expiresInSeconds * 1000).toLocaleDateString('en-IN', {
       timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
     })
     : null;
 
-  const waDigits = phoneDigits(form.whatsapp_number);
-  const waLooksLocal = waDigits.length === 10 && /^[6-9]/.test(waDigits);
+  const waNumber = toWhatsAppNumber(form.whatsapp_number);
 
   const settingsBody = (content) => {
     if (loading) return <LoadingState label="Loading settings…" className="py-6" />;
@@ -209,9 +211,9 @@ export function AdminSettingsPage() {
               label="WhatsApp Number"
               htmlFor="whatsapp_number"
               hint={
-                waLooksLocal
-                  ? 'This looks like a number without the country code — for India add 91 in front (e.g. 918484913170).'
-                  : 'Digits only, including the country code (10–15 digits), e.g. 918484913170 for India.'
+                waNumber
+                  ? `Customers will message ${prettyWhatsApp(waNumber)}.`
+                  : 'Indian mobile number. Spaces, +91 or a leading 0 are fine.'
               }
             >
               <Input
@@ -219,13 +221,13 @@ export function AdminSettingsPage() {
                 name="whatsapp_number"
                 value={form.whatsapp_number}
                 onChange={handleChange}
-                placeholder={DEFAULT_WHATSAPP}
+                placeholder="e.g. 84849 13170"
                 inputMode="tel"
                 autoComplete="off"
                 maxLength={30}
               />
             </Field>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-espresso/60">
               This number appears on the “Order on WhatsApp” buttons across the storefront.
             </p>
             {waMsg && <Alert tone={waMsg.tone}>{waMsg.text}</Alert>}
@@ -244,8 +246,9 @@ export function AdminSettingsPage() {
               description="Turn the announcement strip on or off."
             />
 
-            <Field label="Message" hint={`${form.announcement_message.length}/300 characters`}>
+            <Field label="Message" htmlFor="announcement_message" hint={`${form.announcement_message.length}/300 characters`}>
               <Input
+                id="announcement_message"
                 name="announcement_message"
                 value={form.announcement_message}
                 onChange={handleChange}
@@ -255,8 +258,9 @@ export function AdminSettingsPage() {
             </Field>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="CTA Text" hint="Max 50 characters">
+              <Field label="Button text" htmlFor="announcement_cta_text" hint="Max 50 characters. Leave blank for no button.">
                 <Input
+                  id="announcement_cta_text"
                   name="announcement_cta_text"
                   value={form.announcement_cta_text}
                   onChange={handleChange}
@@ -265,8 +269,9 @@ export function AdminSettingsPage() {
                 />
               </Field>
 
-              <Field label="CTA Link" hint="Relative path like /products">
+              <Field label="Button link" htmlFor="announcement_cta_link" hint="A page on this site like /products, or a full address starting with https://">
                 <Input
+                  id="announcement_cta_link"
                   name="announcement_cta_link"
                   value={form.announcement_cta_link}
                   onChange={handleChange}
@@ -291,42 +296,27 @@ export function AdminSettingsPage() {
       </Card>
 
       <Card
-        title="Instagram token"
-        subtitle="The storefront’s Instagram reels use a long-lived access token that must be refreshed before it expires."
+        title="Instagram reels"
+        subtitle="The reels on the home page come from Instagram through a connection that expires after about 60 days."
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Refresh the token about once a month. Tokens last 60 days; an expired token can’t be refreshed here.
+          <p className="text-sm text-espresso/70">
+            Press the button about once a month to keep the connection alive. If it has already expired,
+            it can’t be refreshed here; ask your developer to reconnect Instagram.
           </p>
           <Button onClick={refreshInstagramToken} disabled={igLoading}>
-            {igLoading ? 'Refreshing…' : 'Refresh Instagram token'}
+            {igLoading ? 'Refreshing…' : 'Refresh Instagram connection'}
           </Button>
 
           {igError && <Alert tone="error">{igError}</Alert>}
 
-          {igResult?.new_token && (
-            <div className="space-y-3">
-              <Field
-                label="New access token"
-                htmlFor="ig-token"
-                hint={igDays ? `Valid for about ${igDays} days${igExpiry ? ` (until ${igExpiry})` : ''}.` : undefined}
-              >
-                <div className="flex gap-2">
-                  <Input
-                    id="ig-token"
-                    ref={tokenInputRef}
-                    value={igResult.new_token}
-                    readOnly
-                    onFocus={(e) => e.target.select()}
-                    className="flex-1 font-mono text-xs"
-                  />
-                  <Button variant="outline" onClick={copyToken} className="shrink-0">Copy</Button>
-                </div>
-              </Field>
-              <Alert tone="warning" title="One more step">
-                Update INSTAGRAM_ACCESS_TOKEN in Railway → Variables, then redeploy. Tokens last 60 days.
-              </Alert>
-            </div>
+          {igResult && (
+            <Alert tone="success" title="Instagram accepted the refresh">
+              {igDays
+                ? `Instagram says the refreshed connection lasts about ${igDays} days${igExpiry ? ` (until about ${igExpiry})` : ''}. `
+                : ''}
+              Let your developer know you refreshed it today, so they can confirm it is saved on the server.
+            </Alert>
           )}
         </div>
       </Card>

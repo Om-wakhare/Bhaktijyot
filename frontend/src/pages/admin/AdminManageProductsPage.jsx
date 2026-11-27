@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../../services/apiClient';
 import { mediaUrl } from '../../services/media';
 import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Alert, Button, Card, EmptyState, ErrorState, FileInput, Input, LoadingState, Page, Pill, Select, cn,
 } from '../../components/admin/ui';
 import { useToast } from '../../components/admin/Toast';
@@ -13,18 +16,26 @@ import {
 
 const MAX_BULK_BYTES = 5 * 1024 * 1024;
 
+/** Stock -1 means "unlimited / not tracked" in the backend — never show it as a number. */
 function StockBadge({ stock }) {
-  if (stock === -1) return <Pill className="bg-gray-100 text-gray-500">Unlimited</Pill>;
-  if (stock === 0) return <Pill className="bg-red-100 text-red-700">Out of Stock</Pill>;
-  if (stock <= 5) return <Pill className="bg-amber-100 text-amber-800">Low: {stock}</Pill>;
-  return <Pill className="bg-emerald-100 text-emerald-800">In Stock: {stock}</Pill>;
+  if (stock === -1 || stock === null || stock === undefined) {
+    return <Pill className="bg-espresso/5 text-espresso/75" title="Stock is not tracked for this product">Unlimited</Pill>;
+  }
+  if (stock === 0) return <Pill className="bg-red-100 text-red-800">Out of stock</Pill>;
+  if (stock <= 5) return <Pill className="bg-gold-100 text-gold-800">Low: {stock} left</Pill>;
+  return <Pill className="bg-primary-50 text-primary-dark">{stock} in stock</Pill>;
+}
+
+/** Sort value: untracked (unlimited) stock sorts after every real count. */
+function stockSortValue(stock) {
+  return stock === -1 || stock === null || stock === undefined ? Number.POSITIVE_INFINITY : stock;
 }
 
 function StatusDot({ active }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={cn('h-2 w-2 rounded-full shrink-0', active ? 'bg-primary' : 'bg-gray-300')} />
-      <span className={cn('text-[11px] font-semibold', active ? 'text-primary' : 'text-gray-400')}>
+      <span className={cn('h-2 w-2 rounded-full shrink-0', active ? 'bg-primary' : 'bg-espresso/30')} />
+      <span className={cn('text-[11px] font-semibold', active ? 'text-primary' : 'text-espresso/60')}>
         {active ? 'Published' : 'Draft'}
       </span>
     </span>
@@ -35,10 +46,10 @@ function SortHeader({ col, label, sort, onSort }) {
   const active = sort.col === col;
   return (
     <th
-      className="px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500"
+      className="px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-espresso/60"
       aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
-      <button type="button" onClick={() => onSort(col)} className="inline-flex items-center gap-1 uppercase hover:text-gray-900">
+      <button type="button" onClick={() => onSort(col)} className="inline-flex items-center gap-1 uppercase hover:text-espresso">
         {label}
         <span aria-hidden="true">{active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
       </button>
@@ -46,7 +57,7 @@ function SortHeader({ col, label, sort, onSort }) {
   );
 }
 
-const TH = 'px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500';
+const TH = 'px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-espresso/60';
 const TD = 'px-3.5 py-2.5 align-middle';
 
 export function AdminManageProductsPage() {
@@ -111,14 +122,8 @@ export function AdminManageProductsPage() {
     setBulkError('');
     setBulkInputKey((k) => k + 1);
   };
+  // Never close mid-upload (the result would be lost and the sheet could be sent again)
   const closeBulk = () => { if (!bulkUploading) setBulkOpen(false); };
-
-  useEffect(() => {
-    if (!bulkOpen) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape' && !bulkUploading) setBulkOpen(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [bulkOpen, bulkUploading]);
 
   const downloadTemplate = async () => {
     try {
@@ -254,7 +259,7 @@ export function AdminManageProductsPage() {
 
     const val = (p) => {
       if (sort.col === 'price') return p.price ?? 0;
-      if (sort.col === 'stock') return p.stock ?? -1;
+      if (sort.col === 'stock') return stockSortValue(p.stock);
       return (p.name ?? '').toLowerCase();
     };
     list.sort((a, b) => {
@@ -325,7 +330,7 @@ export function AdminManageProductsPage() {
             </Button>
           )}
           {!loading && !loadError && (
-            <span className="ml-auto text-xs text-gray-400">
+            <span className="ml-auto text-xs text-espresso/60">
               {filtered.length} result{filtered.length !== 1 ? 's' : ''}
             </span>
           )}
@@ -343,9 +348,50 @@ export function AdminManageProductsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState>No products match these filters.</EmptyState>
         ) : (
-          <div className="overflow-x-auto -mx-4 sm:-mx-5">
+          <>
+          {/* Phones: one card per product */}
+          <ul className="sm:hidden -mx-4 divide-y divide-espresso/8 border-y border-espresso/8">
+            {filtered.map((p) => (
+              <li key={p.id} className="flex gap-3 px-4 py-3">
+                {p.image_path ? (
+                  <img src={mediaUrl(p.image_path)} alt="" className="h-14 w-14 shrink-0 rounded-md object-cover" />
+                ) : (
+                  <div className="h-14 w-14 shrink-0 rounded-md bg-ivory flex items-center justify-center text-lg text-espresso/40" aria-hidden="true">
+                    ◈
+                  </div>
+                )}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <Link to={`/admin/products/${p.id}/edit`} className="block truncate text-sm font-semibold text-espresso hover:underline">
+                    {p.name}
+                  </Link>
+                  <div className="text-[11px] text-espresso/60 truncate">
+                    #{p.id} · {p.category?.name ?? 'No category'}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-espresso">{p.price != null ? formatINR(p.price) : '—'}</span>
+                    <StockBadge stock={p.stock} />
+                    <StatusDot active={p.is_active !== false} />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="outline" size="sm" to={`/admin/products/${p.id}/edit`}>Edit</Button>
+                    <Button
+                      variant="danger" size="sm"
+                      onClick={() => handleDelete(p)}
+                      disabled={busyId === p.id}
+                      aria-label={`Delete ${p.name}`}
+                    >
+                      {busyId === p.id ? '…' : 'Delete'}
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Tablets and computers: sortable table */}
+          <div className="hidden sm:block overflow-x-auto -mx-4 sm:-mx-5">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-ivory border-b border-espresso/8">
                 <tr>
                   <th className={TH}>Image</th>
                   <SortHeader col="name" label="Name" sort={sort} onSort={toggleSort} />
@@ -359,12 +405,12 @@ export function AdminManageProductsPage() {
               </thead>
               <tbody>
                 {filtered.map((p, idx) => (
-                  <tr key={p.id} className={cn('border-t border-gray-100', idx % 2 ? 'bg-gray-50/60' : 'bg-white')}>
+                  <tr key={p.id} className={cn('border-t border-espresso/8', idx % 2 ? 'bg-ivory/60' : 'bg-white')}>
                     <td className={TD}>
                       {p.image_path ? (
                         <img src={mediaUrl(p.image_path)} alt="" className="h-[38px] w-[38px] rounded-md object-cover" />
                       ) : (
-                        <div className="h-[38px] w-[38px] rounded-md bg-gray-100 flex items-center justify-center text-lg text-gray-300" aria-hidden="true">
+                        <div className="h-[38px] w-[38px] rounded-md bg-espresso/5 flex items-center justify-center text-lg text-espresso/45" aria-hidden="true">
                           ◈
                         </div>
                       )}
@@ -373,27 +419,27 @@ export function AdminManageProductsPage() {
                     <td className={TD}>
                       <Link
                         to={`/admin/products/${p.id}/edit`}
-                        className="block max-w-[220px] truncate font-semibold text-gray-900 hover:underline"
+                        className="block max-w-[220px] truncate font-semibold text-espresso hover:underline"
                       >
                         {p.name}
                       </Link>
-                      <span className="text-[11px] text-gray-400">#{p.id} · {p.slug}</span>
+                      <span className="text-[11px] text-espresso/60">#{p.id} · {p.slug}</span>
                     </td>
 
                     <td className={TD}>
-                      <span className="text-xs text-gray-500">{p.category?.name ?? '—'}</span>
+                      <span className="text-xs text-espresso/60">{p.category?.name ?? '—'}</span>
                     </td>
 
                     <td className={TD}>
                       {p.price != null ? (
                         <>
-                          <span className="font-semibold text-gray-800">{formatINR(p.price)}</span>
+                          <span className="font-semibold text-espresso">{formatINR(p.price)}</span>
                           {p.mrp != null && p.mrp > p.price && (
-                            <div className="text-[11px] text-gray-400 line-through">{formatINR(p.mrp)}</div>
+                            <div className="text-[11px] text-espresso/60 line-through">{formatINR(p.mrp)}</div>
                           )}
                         </>
                       ) : (
-                        <span className="text-gray-300">—</span>
+                        <span className="text-espresso/45">—</span>
                       )}
                     </td>
 
@@ -402,9 +448,9 @@ export function AdminManageProductsPage() {
 
                     <td className={TD}>
                       {p.badge ? (
-                        <Pill className="bg-red-900/8 text-red-900">{p.badge}</Pill>
+                        <Pill className="bg-gold-100 text-gold-800">{p.badge}</Pill>
                       ) : (
-                        <span className="text-gray-300 text-xs">—</span>
+                        <span className="text-espresso/45 text-xs">—</span>
                       )}
                     </td>
 
@@ -415,6 +461,7 @@ export function AdminManageProductsPage() {
                           variant="danger" size="sm"
                           onClick={() => handleDelete(p)}
                           disabled={busyId === p.id}
+                          aria-label={`Delete ${p.name}`}
                         >
                           {busyId === p.id ? '…' : 'Delete'}
                         </Button>
@@ -422,92 +469,95 @@ export function AdminManageProductsPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
+                </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
-      {/* ── Bulk Upload Modal ── */}
-      {bulkOpen && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-espresso/60 backdrop-blur-[3px]" aria-hidden="true" onClick={closeBulk} />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="bulk-upload-title"
-            className="relative w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
-          >
-            <h3 id="bulk-upload-title" className="text-lg font-bold text-gray-900">Bulk Upload Products</h3>
-            <p className="text-sm text-gray-500 mt-1">
+      {/* ── Bulk Upload dialog ── */}
+      <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open) closeBulk(); }}>
+        <DialogContent
+          hideClose={bulkUploading}
+          onInteractOutside={(e) => { if (bulkUploading) e.preventDefault(); }}
+          onEscapeKeyDown={(e) => { if (bulkUploading) e.preventDefault(); }}
+          className="w-[calc(100%-2rem)] max-w-[520px] max-h-[90vh] overflow-y-auto gap-0 rounded-2xl border-espresso/10 bg-white p-5 shadow-2xl sm:rounded-2xl sm:p-6"
+        >
+          <DialogHeader className="space-y-0 pr-6 text-left">
+            <DialogTitle className="text-lg font-bold text-espresso">Bulk Upload Products</DialogTitle>
+            <DialogDescription className="mt-1 text-sm text-espresso/70">
               Upload an Excel (.xlsx) file to create many products at once (max 5 MB, 2000 rows).
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Step 1 — template */}
+          <div className="mt-5 p-3 rounded-lg bg-ivory border border-espresso/8">
+            <p className="text-xs font-semibold text-espresso/80 mb-1">1. Download the template</p>
+            <p className="text-[11px] text-espresso/70 mb-2">
+              Columns: name (required), slug, description, benefits, price, mrp, badge, category, stock.
+              Leave <b>slug</b> blank to auto-generate. <b>category</b> matches an existing category name.
+              Leave <b>stock</b> blank for unlimited (not tracked).
             </p>
-
-            {/* Step 1 — template */}
-            <div className="mt-5 p-3 rounded-lg bg-gray-50 border border-gray-100">
-              <p className="text-xs font-semibold text-gray-700 mb-1">1. Download the template</p>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Columns: name (required), slug, description, benefits, price, mrp, badge, category, stock.
-                Leave <b>slug</b> blank to auto-generate. <b>category</b> matches an existing category name.
-              </p>
-              <Button size="sm" variant="outline" onClick={downloadTemplate}>Download Excel Template</Button>
-            </div>
-
-            {/* Step 2 — file */}
-            <div className="mt-4">
-              <label htmlFor="bulk-file" className="block text-xs font-semibold text-gray-700 mb-2">
-                2. Choose your filled .xlsx file
-              </label>
-              <FileInput
-                key={bulkInputKey}
-                id="bulk-file"
-                accept=".xlsx,.xlsm"
-                onChange={onBulkFileChange}
-                disabled={bulkUploading}
-              />
-            </div>
-
-            {bulkError && <Alert tone="error" className="mt-4">{bulkError}</Alert>}
-
-            {/* Result */}
-            {bulkResult && (
-              <Alert
-                tone={createdCount > 0 ? 'success' : 'warning'}
-                className="mt-4"
-                title={
-                  createdCount > 0
-                    ? `✓ ${createdCount} created · ${bulkResult.skipped ?? 0} skipped`
-                    : `No products were created · ${bulkResult.skipped ?? 0} skipped`
-                }
-              >
-                {bulkResult.errors?.length > 0 && (
-                  <div className="mt-2 max-h-40 overflow-y-auto">
-                    <p className="text-xs font-semibold text-red-700 mb-1">Skipped rows:</p>
-                    <ul className="text-[11px] text-red-600 space-y-0.5">
-                      {bulkResult.errors.map((er, i) => (
-                        <li key={i}>Row {er.row}: {er.error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <p className="mt-2 text-[11px] text-gray-600">
-                  To import more, fix the sheet and choose it again.
-                </p>
-              </Alert>
-            )}
-
-            {/* Actions */}
-            <div className="mt-6 flex items-center justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={closeBulk} disabled={bulkUploading}>
-                {bulkResult ? 'Done' : 'Cancel'}
-              </Button>
-              <Button size="sm" onClick={handleBulkUpload} disabled={!bulkFile || bulkUploading}>
-                {bulkUploading ? 'Uploading…' : 'Upload & Create'}
-              </Button>
-            </div>
+            <Button size="sm" variant="outline" onClick={downloadTemplate}>Download Excel Template</Button>
           </div>
-        </div>
-      )}
+
+          {/* Step 2 — file */}
+          <div className="mt-4">
+            <label htmlFor="bulk-file" className="block text-xs font-semibold text-espresso/80 mb-2">
+              2. Choose your filled .xlsx file
+            </label>
+            <FileInput
+              key={bulkInputKey}
+              id="bulk-file"
+              accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={onBulkFileChange}
+              disabled={bulkUploading}
+            />
+          </div>
+
+          {bulkError && <Alert tone="error" className="mt-4">{bulkError}</Alert>}
+
+          {/* Result */}
+          {bulkResult && (
+            <Alert
+              tone={createdCount > 0 ? 'success' : 'warning'}
+              className="mt-4"
+              title={
+                createdCount > 0
+                  ? `${createdCount} created · ${bulkResult.skipped ?? 0} skipped`
+                  : `No products were created · ${bulkResult.skipped ?? 0} skipped`
+              }
+            >
+              {bulkResult.errors?.length > 0 && (
+                <div className="mt-2 max-h-40 overflow-y-auto">
+                  <p className="text-xs font-semibold text-red-800 mb-1">Skipped rows:</p>
+                  <ul className="text-[11px] text-red-800 space-y-0.5">
+                    {bulkResult.errors.map((er, i) => (
+                      <li key={i}>Row {er.row}: {er.error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-espresso/70">
+                {createdCount > 0
+                  ? 'This file has been imported. To add the skipped rows, fix only those rows in a new sheet and upload it — uploading the same file again would create duplicates.'
+                  : 'Fix the sheet and choose it again.'}
+              </p>
+            </Alert>
+          )}
+
+          {/* Actions */}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" size="sm" onClick={closeBulk} disabled={bulkUploading}>
+              {bulkResult ? 'Done' : 'Cancel'}
+            </Button>
+            <Button size="sm" onClick={handleBulkUpload} disabled={!bulkFile || bulkUploading}>
+              {bulkUploading ? 'Uploading…' : 'Upload & Create'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Page>
   );
 }
