@@ -312,7 +312,7 @@ export function AdminGenerateCertificatePage() {
         </Card>
 
         {/* ── Generate form + Preview ─────────────────────────────────── */}
-        <div className="grid gap-6 lg:grid-cols-2 items-start">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 items-start">
           <Card
             title="Certificate Details"
             subtitle={selectedTemplate ? `Template: ${selectedTemplate}` : 'Select a template above first.'}
@@ -332,7 +332,7 @@ export function AdminGenerateCertificatePage() {
               {/* Identification */}
               <div>
                 <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Identification</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Certificate No" htmlFor="cert-certificate_no" hint="Auto-generated if left blank.">
                     <Input id="cert-certificate_no" name="certificate_no" value={fields.certificate_no} onChange={set('certificate_no')} placeholder="e.g. BJ-2025-001" />
                   </Field>
@@ -348,7 +348,7 @@ export function AdminGenerateCertificatePage() {
               {/* Left column properties */}
               <div>
                 <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Left Column</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Colour" htmlFor="cert-colour">
                     <Input id="cert-colour" name="colour" value={fields.colour} onChange={set('colour')} placeholder="e.g. Deep Red" />
                   </Field>
@@ -373,7 +373,7 @@ export function AdminGenerateCertificatePage() {
               {/* Right column properties */}
               <div>
                 <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Right Column</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Weight" htmlFor="cert-weight">
                     <Input id="cert-weight" name="weight" value={fields.weight} onChange={set('weight')} placeholder="e.g. 3.45 Cts" />
                   </Field>
@@ -398,7 +398,7 @@ export function AdminGenerateCertificatePage() {
               {/* Remarks & signatory */}
               <div>
                 <p className="text-xs font-semibold text-espresso/60 uppercase tracking-wide mb-2">Remarks &amp; Signatory</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Remark" htmlFor="cert-remark" hint="Auto-wrapped inside the remark box on the certificate.">
                     <Input id="cert-remark" name="remark" value={fields.remark} onChange={set('remark')} placeholder="e.g. Certified Natural Gemstone" />
                   </Field>
@@ -411,7 +411,7 @@ export function AdminGenerateCertificatePage() {
               {/* Landscape-only fields */}
               <details className="text-xs text-espresso/60">
                 <summary className="cursor-pointer font-semibold uppercase tracking-wide text-espresso/60 mb-2">Landscape template only ▸</summary>
-                <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-2">
                   <Field label="Size" htmlFor="cert-size">
                     <Input id="cert-size" name="size" value={fields.size} onChange={set('size')} placeholder="e.g. 8.2 × 6.1 mm" />
                   </Field>

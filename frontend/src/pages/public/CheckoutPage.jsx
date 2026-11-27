@@ -653,11 +653,11 @@ export function CheckoutPage() {
       )}
 
       <form onSubmit={handleSubmit} noValidate aria-busy={phase === 'preparing' || phase === 'paying' ? 'true' : undefined}>
-        <div className="grid gap-6 lg:grid-cols-[1fr,380px] items-start">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr,380px] items-start">
           {/* Contact + delivery */}
           <section className="bg-ivory border border-gold/30 rounded-2xl p-5 sm:p-6 shadow-sm space-y-5" aria-label="Contact and delivery details">
             <SectionHeading step="1">Contact details</SectionHeading>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field id={fid('customer_name')} label="Full name" required error={fieldErrors.customer_name} className="sm:col-span-2">
                 <input {...fieldProps('customer_name')} type="text" autoComplete="name" maxLength={255} placeholder="Your full name" />
               </Field>
@@ -686,7 +686,7 @@ export function CheckoutPage() {
             <div className="pt-2 border-t border-gold/20" />
             <SectionHeading step="2">Delivery address</SectionHeading>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field id={fid('customer_address')} label="Address" required error={fieldErrors.customer_address} className="sm:col-span-2">
                 <textarea
                   {...fieldProps('customer_address')}

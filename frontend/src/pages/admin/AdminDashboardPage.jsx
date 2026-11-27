@@ -51,7 +51,7 @@ export function AdminDashboardPage() {
     return (
       <div className="space-y-4 animate-pulse" role="status" aria-label="Loading dashboard">
         <div className="h-6 bg-espresso/10 rounded w-48" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-28 bg-espresso/10 rounded-xl" />)}
         </div>
       </div>
@@ -91,7 +91,7 @@ export function AdminDashboardPage() {
       )}
 
       {/* Stats cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Total Orders"
           value={orders.total ?? 0}

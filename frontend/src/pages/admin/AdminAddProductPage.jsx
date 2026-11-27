@@ -180,7 +180,7 @@ export function AdminAddProductPage() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Name *" error={fieldErrors.name} htmlFor="p-name">
               <Input id="p-name" name="name" value={form.name} onChange={handleChange} required maxLength={255} />
             </Field>
@@ -223,7 +223,7 @@ export function AdminAddProductPage() {
             />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Price (₹, optional)" error={fieldErrors.price} htmlFor="p-price">
               <Input id="p-price" name="price" value={form.price} onChange={handleChange} placeholder="₹" type="number" inputMode="decimal" min="0" step="0.01" />
             </Field>
@@ -287,7 +287,7 @@ export function AdminAddProductPage() {
 
           <div className="pt-4 border-t border-espresso/8">
             <div className="text-sm font-semibold text-espresso mb-3">Media (optional)</div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Images (up to 4 — the first is the primary image)">
                 <ImageUploader existingCount={0} onFilesChange={setImageFiles} disabled={saving} />
               </Field>

@@ -349,7 +349,7 @@ export function ProductsPage() {
       <div ref={resultsRef} className="scroll-mt-28 lg:scroll-mt-36" aria-busy={loading ? 'true' : undefined}>
         <h2 className="sr-only">Results</h2>
         {loading ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         ) : error ? (
@@ -401,7 +401,7 @@ export function ProductsPage() {
             )}
           </div>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {products.map((p, i) => (
               <ProductCard key={p.id} product={p} index={i} />
             ))}

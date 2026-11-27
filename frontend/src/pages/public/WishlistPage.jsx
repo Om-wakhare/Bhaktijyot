@@ -46,7 +46,7 @@ export function WishlistPage() {
             </div>
           )}
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy={loading ? 'true' : undefined}>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy={loading ? 'true' : undefined}>
             {showSkeleton
               ? Array.from({ length: Math.min(count, 8) }).map((_, i) => <SkeletonCard key={i} />)
               : products.map((p, i) => <ProductCard key={p.id} product={p} index={i} />)}

@@ -376,7 +376,7 @@ export function AdminEditProductPage() {
 
           <div className="space-y-4">
             {/* Name + slug */}
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Name *" error={fieldErrors.name} htmlFor="ep-name">
                 <Input id="ep-name" name="name" value={form.name} onChange={handleChange} required maxLength={255} />
               </Field>
@@ -440,7 +440,7 @@ export function AdminEditProductPage() {
             </Field>
 
             {/* Price / MRP / Stock / Category / Sort */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Price (₹)" error={fieldErrors.price} htmlFor="ep-price">
                 <Input id="ep-price" name="price" value={form.price} onChange={handleChange} type="number" inputMode="decimal" min="0" step="0.01" />
               </Field>

@@ -102,7 +102,7 @@ export function CartPage() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr,360px] items-start">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr,360px] items-start">
         {/* Cart Items */}
         <ul className="space-y-3">
           {items.map((item) => {

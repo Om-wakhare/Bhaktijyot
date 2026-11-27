@@ -222,7 +222,7 @@ export function AdminOrdersPage() {
                   {/* Order details */}
                   {expanded && (
                     <div id={panelId} className="px-4 py-4 space-y-4 border-t border-espresso/10">
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <div className="text-xs font-semibold text-espresso/60 mb-1">Customer</div>
                           <div className="text-sm text-espresso">{order.customer_name}</div>

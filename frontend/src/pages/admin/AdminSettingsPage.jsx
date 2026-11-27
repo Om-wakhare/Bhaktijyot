@@ -269,7 +269,7 @@ export function AdminSettingsPage() {
               />
             </Field>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Button text" htmlFor="announcement_cta_text" hint="Max 50 characters. Leave blank for no button.">
                 <Input
                   id="announcement_cta_text"

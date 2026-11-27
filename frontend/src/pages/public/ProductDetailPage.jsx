@@ -542,7 +542,7 @@ function RelatedProducts({ categoryId, currentProductId }) {
         <div className="text-[11px] font-semibold uppercase tracking-widest text-gold-700">Discover More</div>
         <h2 id="related-heading" className="font-display text-xl font-semibold text-espresso">You May Also Like</h2>
       </div>
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {products.map((p, i) => (
           <ProductCard key={p.id} product={p} index={i} />
         ))}
@@ -717,7 +717,7 @@ export function ProductDetailPage() {
           <span className="text-espresso font-medium truncate max-w-[180px]" aria-current="page">{product.name}</span>
         </nav>
 
-        <div className="grid gap-8 md:grid-cols-[1.1fr,1fr] items-start">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-[1.1fr,1fr] items-start">
           {/* Left — gallery, sticky just below the site header
               (80px mobile/tablet bar → 96px; 112px desktop header on lg → 128px) */}
           <div className="space-y-4 min-w-0 md:sticky md:top-24 lg:top-32 md:self-start">

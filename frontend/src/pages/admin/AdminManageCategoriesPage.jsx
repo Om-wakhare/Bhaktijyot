@@ -153,9 +153,9 @@ export function AdminManageCategoriesPage() {
       }`}
       style={{ paddingLeft: 16 + cat.level * 20 }}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-espresso truncate">{cat.name}</span>
+          <span className="min-w-0 text-sm font-semibold text-espresso truncate">{cat.name}</span>
           {cat.world && <Pill className="bg-gold/15 text-gold-700">{worldLabel(cat.world)}</Pill>}
         </div>
         <div className="text-[11px] text-espresso/60 truncate">
@@ -188,7 +188,7 @@ export function AdminManageCategoriesPage() {
       description="Edit or delete existing categories."
       actions={<Button to="/admin/categories/add">+ Add Category</Button>}
     >
-      <div className="grid gap-6 lg:grid-cols-2 items-start">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 items-start">
         <Card title="All Categories" subtitle={loading ? undefined : `${flatCategories.length} categories total`}>
           {loading && !categories.length ? (
             <LoadingState label="Loading categories…" />

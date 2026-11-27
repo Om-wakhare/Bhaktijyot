@@ -143,3 +143,30 @@ Skip it for users with `prefers-reduced-motion: reduce`, and test the Crystal St
 ## 21st.dev Magic MCP — not installed (needs your key)
 
 The 21st.dev MCP lets Claude search and generate components from 21st.dev. It requires a personal API key from https://21st.dev/mcp. To set it up yourself: `npx @21st-dev/cli@latest init --client claude` (follow its prompts; keep the key out of git).
+
+---
+
+## Conventions added 2026-11-27 (frontend implementation round)
+
+- **One dialog system: Radix via shadcn.** Drawers (cart, wishlist, mobile menus) use `Sheet`; modals and the lightbox use `Dialog`; admin confirmations use `useConfirm()` (built on `Dialog`, `role="alertdialog"`). Don't hand-roll focus traps or scroll locks.
+  - `Dialog`/`Sheet` sit at `z-[60]` (above the sticky header and floating WhatsApp button at `z-50`) on an `espresso/50` overlay.
+  - Pass `hideClose` when the panel renders its own close button.
+  - Every `DialogContent`/`SheetContent` needs a `DialogTitle`/`SheetTitle` (use `sr-only` if hidden) and a description or `aria-describedby={undefined}`.
+- **Grids:** always give a base `grid-cols-1` (e.g. `grid grid-cols-1 gap-4 sm:grid-cols-2`). Without it the implicit column grows to its widest child and the page scrolls sideways on phones.
+- **Stock:** `-1` = unlimited / not tracked, `0` = out of stock, `1+` = units left. Never show "-1"; clamp quantities only when stock > 0.
+- **Errors:** show API errors with `getErrorMessage(err)` (422 `detail` is an array).
+
+## 360° 3D product preview (`src/components/product3d/`)
+
+| File | Role |
+|---|---|
+| `modelSpec.js` | Pure data, no three.js: `resolveModel(product)` picks the shape (admin `model_type` override → name → category) and the look (stone preset by name, gem colour, or the main photo's `model_colors`). Safe to import anywhere. |
+| `Product3DView.jsx` | Lazy wrapper with loading / not-supported / error states, plus `Product3DNote` (the "illustration" disclaimer; always show it with the viewer). |
+| `ProductModelViewer.jsx` | R3F canvas + light-panel studio (no HDR download). **GSAP drives the motion**: turntable speed, `Draggable` + `InertiaPlugin` drag-to-spin, arrow-key steps, intro. Pauses when off-screen; respects reduced motion. |
+| `models.jsx` | Procedural shapes: bead bracelet, mala (ridged rudraksha), brilliant/cabochon gem, crystal tower, raw stone/cluster. Reuses `home/bracelet3d` geometry + stone shader. |
+
+To add a shape: add a component to `MODEL_COMPONENTS` in `models.jsx`, a rule in `SHAPE_RULES` + a label in `modelSpec.js`, and the value to `MODEL_TYPES` in `backend/app/schemas/product.py`.
+
+## Bulk upload (`/admin/products/bulk`)
+
+Excel template → dry run (`POST /products/bulk-upload?dry_run=true`) → photos matched by file/folder name or the `photos` column (`components/admin/bulk/photoMatch.js`) → create with `hold_rows` (products with photos stay drafts) → photos shrunk in the browser (`compressImage.js`) and uploaded two products at a time → held products published.
